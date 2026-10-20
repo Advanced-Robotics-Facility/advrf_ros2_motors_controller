@@ -13,5 +13,4 @@
     position_upper: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     max_velocity: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     max_acceleration: [5.0, 5.0, 5.0, 5.0, 5.0, 5.0]
-    gains: [0.0, 0.0, 0.0, 0.0, 0.0]
     command_durability: volatile

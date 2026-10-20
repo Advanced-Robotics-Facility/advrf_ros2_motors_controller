@@ -41,8 +41,8 @@ class PanelTest(unittest.TestCase):
                 return response
             return callback
         fake.create_service(SetBool, namespace + '/set_trajectory_enabled', mode_callback(0))
-        fake.create_service(SetBool, namespace + '/set_direct_enabled', mode_callback(1))
-        fake.create_subscription(JointState, namespace + '/joint_commands', commands.append, 10)
+        direct_service = fake.create_service(SetBool, namespace + '/set_direct_enabled', mode_callback(1))
+        direct_subscription = fake.create_subscription(JointState, namespace + '/joint_commands', commands.append, 10)
         def power(command):
             def callback(request, response):
                 calls.append(command)
@@ -155,7 +155,23 @@ class PanelTest(unittest.TestCase):
             self.assertTrue(panel.stop.isEnabled())
             with self.assertRaises(ValueError):
                 measured_positions(['a', 'a'], [0., 0.], [('a', -1, 1)])
-            panel.widget.resize(1100, 550)
+            self.assertIn('feedback missing', panel.motion_status.text())
+            # A GoTo-only backend must not require the absent direct controller.
+            fake.destroy_service(direct_service)
+            fake.destroy_subscription(direct_subscription)
+            mode_state[1] = False
+            wait(lambda: not panel.mode_clients[1].service_is_ready()
+                 and panel.command_publisher.get_subscription_count() == 0)
+            timer = fake.create_timer(0.05, lambda: publisher.publish(message))
+            panel.mode.setCurrentIndex(0)
+            wait(lambda: panel.mode_ready and panel.go.isEnabled())
+            self.assertEqual(panel.motion_status.text(), 'GoTo: ready')
+            count = len(goals)
+            panel.go.click()
+            wait(lambda: not panel.busy)
+            self.assertEqual(len(goals), count + 1)
+            fake.destroy_timer(timer)
+            panel.widget.resize(1100, 600)
             panel.widget.grab().save('/tmp/advrf_motor_panel.png')
         finally:
             panel.shutdown_plugin()

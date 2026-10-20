@@ -83,13 +83,13 @@ gains, add a power-node block to your `joint_config.yaml`:
 You can also override START gains explicitly at launch (takes precedence over YAML):
 
 ```bash
-ros2 launch advrf_ros2_motors_controller panel.launch.py \
+ros2 launch advrf_ros2_motors_controller motors.launch.py \
   namespace:=/advrf/miranda control_mode:=position \
   start_gains:='[0.1, 0.0, 0.0005, 0.0, 0.0]'
 ```
 
 The power node logs its configured START mode and gains at startup. This override
-also applies to `motors.launch.py`.
+applies to the motor-power launch, not the panel.
 
 The order is `[pos_kp, pos_kd, tor_kp, tor_ki, tor_kd]`. With
 `control_mode:=position`, START sends both `value=59` and `gains.type=59` with
@@ -165,37 +165,26 @@ slider limits are read from `joint_config.yaml` (`joints`, `position_lower`,
 Keep these shared joint definitions in `joint_config`, rather than overriding
 them in `trajectory_config`.
 
-Build and open the panel with GoTo, trajectory, direct and motor-power nodes:
+The panel is a client only. `panel.launch.py` opens rqt; it never starts motor
+controllers, GoTo/action servers, power nodes, the middleware, or visualization.
+The robot bringup owns these processes. For Miranda, use the configuration's
+`ros2/launcher/start.sh` to start the complete stack, or start that launcher with
+`panel:=false` before opening the client separately:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-up-to advrf_ros2_motors_controller
 source install/setup.bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-# Set EC_CFG to your robot's ec_cfg.yaml, as for the controller launches.
-ros2 launch advrf_ros2_motors_controller panel.launch.py namespace:=/advrf/miranda
-```
-
-The launch uses the same `EC_CFG` / `ROS2_CFG` resolution and explicit
-`joint_config`, `robot_id_map`, and optional `trajectory_config` arguments as the
-existing launches. `control_mode` defaults to `position`. The native middleware
-must already be running. The launch never starts the motors automatically.
-Do not launch another command pipeline for the same motors.
-
-If the controller and power nodes are already running, they must include the
-updated trajectory and direct controllers exposing `set_trajectory_enabled` and
-`set_direct_enabled`. Start the direct controller with `command_enabled:=false`
-as a ROS parameter; these are publication gates, not drive power controls.
-Do not start both standalone controllers with their default enabled settings.
-The panel launch handles the initial states automatically.
-
-Connect the panel to an existing setup:
-
-```bash
 ros2 launch advrf_ros2_motors_controller panel.launch.py \
-  start_controllers:=false namespace:=/advrf/miranda \
-  joint_config:=/path/to/joint_config.yaml
+  namespace:=/advrf/miranda joint_config:=/path/to/joint_config.yaml
 ```
+
+The only panel launch arguments are `namespace` and `joint_config`; the latter
+can be resolved from `EC_CFG` / `ROS2_CFG`. Controller modes, motor IDs, gains and
+profile selection belong to the robot bringup/controller launches. The old
+`start_controllers` option has been removed. Backend availability is shown in
+the panel, and commands are disabled when their required endpoints are missing.
+START/STOP buttons remain explicit operator requests to existing motor services.
+The native middleware must already be running. No motors start automatically.
 
 Or open only the plugin, also available under **Plugins → Robot Tools → ADVRF Motors**:
 
@@ -232,8 +221,10 @@ changes while a trajectory is active or reserved. Disabling or enabling it
 clears its previous hold, so returning from direct mode never restores an old
 trajectory target. Mode/joint selection is locked during motion or streaming.
 Targets resynchronize to measured positions after a successful mode change.
-**Apply mode** retries a failed setup. Both mode services must be available before
-new movement commands are enabled. These services gate publication from these
+**Apply mode** retries a failed setup. Both mode services are required for switching between GoTo and continuous
+commands. A GoTo-only setup can enable trajectory mode without the direct service
+when no `joint_commands` subscriber is present. An existing direct subscriber
+without its gate service keeps mode setup blocked. These services gate publication from these
 nodes; they do not arbitrate other publishers or external mode-service clients.
 
 **Sync targets to feedback** updates targets without moving the robot; it does
@@ -273,7 +264,7 @@ The direct and trajectory controllers each accept the initial ROS parameter
 | `set_direct_enabled` | `std_srvs/SetBool` | Accept/drop incoming `joint_commands`; does not store or cyclically replay old commands. |
 | `set_trajectory_enabled` | `std_srvs/SetBool` | Enable trajectory goals and cyclic output, or disable both and clear hold. Rejects changes during an active/reserved goal. |
 
-The panel launch starts direct disabled and trajectory enabled. The panel disables
+The Miranda robot bringup starts direct disabled and trajectory enabled. The panel disables
 the other pipeline before enabling the requested one. Use only one panel/controller
 client per robot. These gates neither START nor STOP physical drives and do not
 clear middleware-retained commands.
@@ -289,13 +280,11 @@ filename. For Miranda, `position` selects `miranda_pos_3b.yaml` (0x3B) and
 missing/ambiguous profiles cause a launch error.
 
 ```bash
-# Uses EC_CFG for joint configuration, IDs and automatic profile discovery.
-ros2 launch advrf_ros2_motors_controller panel.launch.py \
-  namespace:=/advrf/miranda control_mode:=position
+# From the Miranda configuration ros2/launcher directory:
+./start.sh control_mode:=position
 
 # Or select a profile source explicitly while retaining the current joint config/IDs.
-ros2 launch advrf_ros2_motors_controller panel.launch.py \
-  namespace:=/advrf/miranda control_mode:=position \
+./start.sh control_mode:=position \
   motor_profiles_dir:=/path/to/robot_control/motor
 # Alternatively: motor_profile:=/path/to/robot_control/motor/miranda_pos_3b.yaml
 ```

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import tempfile
+import importlib.util
 import unittest
 import yaml
 from unittest.mock import patch
@@ -15,6 +16,25 @@ from advrf_ros2_motors_controller.launch_config import resolve_paths
 
 
 class LaunchConfigTest(unittest.TestCase):
+    def test_panel_only_launches_client(self):
+        from launch.actions import ExecuteProcess
+        path = Path(__file__).resolve().parents[1] / 'launch/panel.launch.py'
+        spec = importlib.util.spec_from_file_location('panel_client_launch', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as temporary:
+            config = Path(temporary) / 'joint_config.yaml'
+            config.write_text('/**: {ros__parameters: {joints: [a]}}')
+            with patch.dict('os.environ', {'ROS_LOG_DIR': temporary}):
+                context = LaunchContext()
+                context.launch_configurations.update(joint_config=str(config), namespace='/robot')
+                actions = module.setup(context)
+                self.assertEqual(len(actions), 1)
+                self.assertIsInstance(actions[0], ExecuteProcess)
+                description = module.generate_launch_description()
+                args = [e.name for e in description.entities if isinstance(e, DeclareLaunchArgument)]
+                self.assertEqual(args, ['joint_config', 'namespace'])
+
     def test_references_and_overrides(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

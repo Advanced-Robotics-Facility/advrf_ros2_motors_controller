@@ -172,8 +172,7 @@ rclcpp::QoS declare_command_qos(rclcpp::Node &node)
   return qos;
 }
 
-trajectory_msgs::msg::JointTrajectoryPoint
-joint_command(const sensor_msgs::msg::JointState &message)
+trajectory_msgs::msg::JointTrajectoryPoint joint_command(const sensor_msgs::msg::JointState &message)
 {
   const std::set<std::string> names(message.name.begin(), message.name.end());
   if (message.name.empty() || names.count("") || names.size() != message.name.size() ||

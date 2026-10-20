@@ -80,6 +80,12 @@ class MotorPanel(Plugin):
         layout.addLayout(line)
         self.status = QLabel('Waiting for configuration')
         layout.addWidget(self.status)
+        self.connections = QLabel('Backend: not connected')
+        self.connections.setWordWrap(True)
+        layout.addWidget(self.connections)
+        self.motion_status = QLabel('GoTo: waiting for connection')
+        self.motion_status.setWordWrap(True)
+        layout.addWidget(self.motion_status)
         line = QHBoxLayout()
         self.mode = QComboBox()
         self.mode.addItems(['GoTo', 'Continuous joint commands'])
@@ -262,21 +268,38 @@ class MotorPanel(Plugin):
         self.mode_attempted = False
         self.refresh()
 
+    def mode_services_available(self):
+        if not self.mode_clients:
+            return False
+        target = self.mode.currentIndex()
+        if not self.mode_clients[target].service_is_ready():
+            return False
+        if self.mode_clients[1 - target].service_is_ready():
+            return True
+        # A GoTo-only setup has no direct controller to disable. If a direct
+        # subscriber exists without its gate service, keep movement blocked.
+        return target == 0 and not self.command_publisher.get_subscription_count()
+
     def apply_mode(self):
         if (self.busy or self.streaming or self.power_busy or self.mode_pending
                 or not self.mode_clients):
             return
         self.mode_ready = False
         self.mode_attempted = True
-        if not all(client.service_is_ready() for client in self.mode_clients):
-            self.note('Mode services unavailable. Start both controllers using panel.launch.py.')
+        if not self.mode_services_available():
+            self.note('Mode services unavailable. Start the robot bringup; this panel only connects to running nodes.')
             self.refresh()
             return
         self.mode_pending = True
         target = self.mode.currentIndex()  # 0: trajectory, 1: direct
-        self.note('Switching command mode: disabling the other controller first…')
-        self.later(self.mode_clients[1 - target].call_async(SetBool.Request(data=False)),
-                   lambda response: self.other_disabled(response, target))
+        if self.mode_clients[1 - target].service_is_ready():
+            self.note('Switching command mode: disabling the other controller first…')
+            self.later(self.mode_clients[1 - target].call_async(SetBool.Request(data=False)),
+                       lambda response: self.other_disabled(response, target))
+        else:
+            self.note('GoTo-only setup: no direct controller connected.')
+            self.later(self.mode_clients[target].call_async(SetBool.Request(data=True)),
+                       self.mode_enabled)
         self.refresh()
 
     def other_disabled(self, response, target):
@@ -346,7 +369,7 @@ class MotorPanel(Plugin):
             self.stream_timer.stop()
             self.note('Continuous commands stopped: feedback missing, stale or outside limits. Restart explicitly.')
         idle = not self.busy and not self.power_busy and not self.stopping and not self.mode_pending
-        available = bool(self.mode_clients and all(c.service_is_ready() for c in self.mode_clients))
+        available = self.mode_services_available()
         if connected and idle and not self.streaming and available and not self.mode_attempted:
             self.apply_mode()
             return
@@ -374,6 +397,38 @@ class MotorPanel(Plugin):
             editable = bool(ready and idle and self.checks[i].isChecked())
             spin.setEnabled(editable)
             slider.setEnabled(editable)
+        backend = {
+            'GoTo action': bool(connected and self.action.server_is_ready()),
+            'Direct input': bool(self.command_publisher and self.command_publisher.get_subscription_count()),
+            'Selected mode service(s)': available,
+            'START service': bool(self.clients and self.clients[0].service_is_ready()),
+            'STOP service': bool(self.clients and self.clients[1].service_is_ready()),
+        }
+        self.connections.setText('Backend · ' + ' | '.join(
+            f'{name}: {"ready" if found else "missing"}' for name, found in backend.items()))
+        blockers = []
+        if not fresh:
+            blockers.append('feedback missing or older than 0.5 s')
+        elif not self.within_limits():
+            blockers.append('measured positions outside configured limits')
+        if not self.initialized:
+            blockers.append('targets not synchronized')
+        if not selected:
+            blockers.append('no joints checked')
+        if direct:
+            blockers.append('Continuous mode selected')
+        if not self.mode_ready:
+            blockers.append('command mode not confirmed; check mode services / Apply mode')
+        if not connected or not self.action.server_is_ready():
+            blockers.append('GoTo action server missing')
+        if not idle:
+            blockers.append('motion, mode switch or power operation in progress')
+        reason = 'GoTo: ready' if not blockers else 'GoTo unavailable: ' + '; '.join(blockers)
+        self.motion_status.setText(reason)
+        self.go.setToolTip(reason)
+        self.stream.setToolTip('Requires fresh feedback, selected joints, direct mode and a joint_commands subscriber.')
+        self.start.setToolTip('Calls start_motors on the running power node; does not launch a process.')
+        self.stop.setToolTip('Calls stop_motors on the running power node; does not terminate processes.')
         state = 'Feedback valid' if fresh else 'Feedback missing or stale'
         if fresh and not self.within_limits():
             state = 'Measured position outside limits: commands disabled'
