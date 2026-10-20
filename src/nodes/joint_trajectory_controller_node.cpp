@@ -4,6 +4,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <std_srvs/srv/set_bool.hpp>
 #include <algorithm>
 #include <chrono>
 #include <set>
@@ -20,6 +21,24 @@ public:
   JointTrajectoryController() : Node("joint_trajectory_controller_node")
   {
     config_ = ControllerConfig::declare(*this);
+    enabled_ = declare_parameter("command_enabled", true);
+    enable_service_ = create_service<std_srvs::srv::SetBool>(
+        "set_trajectory_enabled",
+        [this](std_srvs::srv::SetBool::Request::SharedPtr request,
+               std_srvs::srv::SetBool::Response::SharedPtr response)
+        {
+          if (active_ || reserved_)
+          {
+            response->success = false;
+            response->message = "Cancel the active trajectory before changing command mode";
+            return;
+          }
+          enabled_ = request->data;
+          // Never resume a previous hold when returning from direct control.
+          holding_ = false;
+          response->success = true;
+          response->message = enabled_ ? "Trajectory commands enabled" : "Trajectory commands disabled";
+        });
     canonical_indices_ = config_.joint_indices(config_.joints);
 
     const double rate = declare_parameter("update_rate", 250.0);
@@ -51,6 +70,10 @@ public:
         {
           try
           {
+            if (!enabled_)
+            {
+              throw std::invalid_argument("Trajectory commands disabled");
+            }
             if (active_ || reserved_)
             {
               throw std::invalid_argument("Controller busy; cancel current goal first");
@@ -273,6 +296,10 @@ private:
 
   void cycle()
   {
+    if (!enabled_)
+    {
+      return;
+    }
     try
     {
       if (!active_)
@@ -400,6 +427,8 @@ private:
     }
   }
 
+  bool enabled_ = true;
+  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr enable_service_;
   ControllerConfig config_;
   std::vector<size_t> canonical_indices_;
   std::vector<size_t> goal_indices_;

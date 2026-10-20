@@ -111,6 +111,7 @@ class LaunchConfigTest(unittest.TestCase):
                         'joint_config': str(joint),
                         'robot_id_map': str(mapping),
                         'control_mode': 'impedance',
+                        'start_gains': '[0.1, 0.0, 0.0005, 0.0, 0.0]',
                     })
                     if auto_start:
                         context.launch_configurations['auto_start_motors'] = 'true'
@@ -126,6 +127,7 @@ class LaunchConfigTest(unittest.TestCase):
                     self.assertEqual(len(nodes), 1)
                     params = evaluate_parameters(context, nodes[0]._Node__parameters)
                     self.assertEqual(params[-1]['control_mode'], 'impedance')
+                    self.assertEqual(list(params[-1]['start_gains']), [0.1, 0.0, 0.0005, 0.0, 0.0])
                     self.assertIs(params[-1]['auto_start_motors'], auto_start)
 
     def test_optional_overrides_and_precedence(self):

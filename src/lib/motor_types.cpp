@@ -24,6 +24,19 @@ void MotorsDefinition::declare(int ecat_id, const std::string &joint_name)
   joint_name_to_ecat_id_.emplace(joint_name, ecat_id);
 }
 
+void MotorsDefinition::set_gains(const std::string &joint, const std::array<float, 5> &gains)
+{
+  (void)get_ecat_id(joint);
+  joint_gains_[joint] = gains;
+}
+
+const std::array<float, 5> &MotorsDefinition::gains_for_joint(
+    const std::string &joint, const std::array<float, 5> &fallback) const
+{
+  const auto it = joint_gains_.find(joint);
+  return it == joint_gains_.end() ? fallback : it->second;
+}
+
 int32_t MotorsDefinition::get_ecat_id(const std::string &joint_name) const
 {
   const auto it = joint_name_to_ecat_id_.find(joint_name);

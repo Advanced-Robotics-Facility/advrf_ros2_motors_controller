@@ -1,6 +1,7 @@
 """Resolve robot configuration paths from EC_CFG at launch time."""
 
 import os
+import math
 from pathlib import Path
 
 import yaml
@@ -93,6 +94,20 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
             if trajectory_config:
                 shared_files.append(trajectory_config)
 
+        from .motor_profiles import profile_parameters
+        profile = profile_parameters(joint_config,
+            LaunchConfiguration('namespace').perform(context),
+            LaunchConfiguration('control_mode').perform(context),
+            LaunchConfiguration('motor_profiles_dir').perform(context),
+            LaunchConfiguration('motor_profile').perform(context),
+            os.environ.get('EC_CFG', ''))
+        shared_files.append({'command_enabled': ParameterValue(
+            LaunchConfiguration('command_enabled'), value_type=bool)})
+        if profile:
+            shared_files.append({'joint_gains': profile['joint_gains']})
+            from launch.logging import get_logger
+            get_logger('motor_profiles').info(f"Motor profile: {profile['path']} (joints from {joint_config})")
+
         node_config = optional_config(
             LaunchConfiguration('node_config').perform(context), joint_config,
         )
@@ -105,6 +120,17 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
                     LaunchConfiguration('auto_start_motors'), value_type=bool,
                 ),
             })
+
+            if profile:
+                parameters[-1]['start_joint_gains'] = profile['start_joint_gains']
+            explicit_gains = LaunchConfiguration('start_gains').perform(context)
+            if explicit_gains:
+                gains = yaml.safe_load(explicit_gains)
+                if (not isinstance(gains, list) or len(gains) != 5
+                        or any(isinstance(v, bool) or not isinstance(v, (int, float))
+                               or not math.isfinite(v) for v in gains)):
+                    raise ValueError('start_gains must be a YAML list of five finite numbers')
+                parameters[-1]['start_gains'] = [float(v) for v in gains]
 
         nodes = [Node(
             package='advrf_ros2_motors_controller',
@@ -138,6 +164,11 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
             description='Joint map YAML; defaults to EC_CFG robot.robot_id_map_path',
         ),
         DeclareLaunchArgument('namespace', default_value=''),
+        DeclareLaunchArgument('command_enabled', default_value='true', choices=['true', 'false']),
+        DeclareLaunchArgument('motor_profile', default_value='', description='Explicit middleware motor profile YAML'),
+        DeclareLaunchArgument('motor_profiles_dir', default_value='', description='Profiles directory; defaults beside EC_CFG robot_control_path'),
+        DeclareLaunchArgument('control_mode', default_value='position',
+            choices=['position', 'impedance', 'velocity', 'torque', 'current']),
     ]
     if uses_trajectory:
         arguments.append(DeclareLaunchArgument(
@@ -146,8 +177,8 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
         ))
     if motor_power:
         arguments.extend([
-            DeclareLaunchArgument('control_mode', default_value='position',
-                                  choices=['position', 'impedance', 'velocity', 'torque', 'current']),
+            DeclareLaunchArgument('start_gains', default_value='',
+                description='Optional explicit START gains [pos_kp, pos_kd, tor_kp, tor_ki, tor_kd]'),
             DeclareLaunchArgument('auto_start_motors', default_value='false',
                                   choices=['true', 'false']),
         ])

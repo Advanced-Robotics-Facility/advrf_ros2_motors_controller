@@ -1,0 +1,510 @@
+"""Local rqt frontend. Explicit GoTo or continuous joint commands through exclusive controllers."""
+import argparse
+import os
+import time
+import yaml
+
+from advrf_interfaces.action import GoToJointPositions
+from python_qt_binding.QtCore import QObject, Qt, QTimer, Signal
+from python_qt_binding.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QDoubleSpinBox, QSlider, QGridLayout, QFileDialog, QPlainTextEdit, QComboBox, QCheckBox,
+)
+from rclpy.action import ActionClient
+from rclpy.qos import qos_profile_sensor_data
+from rclpy.validate_namespace import validate_namespace
+from rqt_gui_py.plugin import Plugin
+from sensor_msgs.msg import JointState
+from std_srvs.srv import Trigger, SetBool
+
+from .panel_config import load_joints, measured_positions, resolve_panel_config, load_velocities
+
+
+class Dispatch(QObject):
+    run = Signal(object)
+    state = Signal(object)
+
+
+class MotorPanel(Plugin):
+    def __init__(self, context):
+        super().__init__(context)
+        self.setObjectName('AdvrfMotors')
+        self.node = context.node
+        self.closed = False
+        self.joints = []
+        self.rows = []
+        self.clients = []
+        self.mode_clients = []
+        self.command_publisher = None
+        self.streaming = False
+        self.mode_pending = False
+        self.mode_ready = False
+        self.mode_attempted = False
+        self.checks = []
+        self.subscription = None
+        self.action = None
+        self.handle = None
+        self.busy = False
+        self.power_busy = False
+        self.stopping = False
+        self.cancel_requested = False
+        self.received = 0.0
+        self.values = None
+        self.initialized = False
+        self.dispatch = Dispatch()
+        self.dispatch.run.connect(lambda fn: fn())
+        self.dispatch.state.connect(self.receive)
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--joint-config', default='')
+        parser.add_argument('--namespace', default='')
+        args = parser.parse_args(context.argv())
+        self.widget = QWidget()
+        self.widget.setObjectName('AdvrfMotorPanel')
+        self.widget.setWindowTitle('ADVRF · Joint control')
+        layout = QVBoxLayout(self.widget)
+        line = QHBoxLayout()
+        self.config = QLineEdit(args.joint_config)
+        browse = QPushButton('Browse…')
+        browse.clicked.connect(self.browse)
+        line.addWidget(QLabel('Joint config'))
+        line.addWidget(self.config)
+        line.addWidget(browse)
+        layout.addLayout(line)
+        line = QHBoxLayout()
+        self.namespace = QLineEdit(args.namespace)
+        self.connect_button = QPushButton('Load / connect')
+        self.connect_button.clicked.connect(self.connect_robot)
+        line.addWidget(QLabel('Robot namespace'))
+        line.addWidget(self.namespace)
+        line.addWidget(self.connect_button)
+        layout.addLayout(line)
+        self.status = QLabel('Waiting for configuration')
+        layout.addWidget(self.status)
+        line = QHBoxLayout()
+        self.mode = QComboBox()
+        self.mode.addItems(['GoTo', 'Continuous joint commands'])
+        self.mode.currentIndexChanged.connect(self.mode_changed)
+        self.apply_mode_button = QPushButton('Apply mode')
+        self.apply_mode_button.clicked.connect(self.apply_mode)
+        self.stream = QPushButton('Start continuous commands')
+        self.stream.clicked.connect(self.toggle_stream)
+        line.addWidget(QLabel('Command mode'))
+        line.addWidget(self.mode)
+        line.addWidget(self.apply_mode_button)
+        line.addWidget(self.stream)
+        layout.addLayout(line)
+        self.grid = QGridLayout()
+        layout.addLayout(self.grid)
+        line = QHBoxLayout()
+        self.velocity = QDoubleSpinBox()
+        self.acceleration = QDoubleSpinBox()
+        for spin in (self.velocity, self.acceleration):
+            spin.setRange(0.01, 1.0)
+            spin.setSingleStep(0.05)
+            spin.setValue(0.1)
+        line.addWidget(QLabel('Velocity scaling'))
+        line.addWidget(self.velocity)
+        line.addWidget(QLabel('Acceleration scaling'))
+        line.addWidget(self.acceleration)
+        layout.addLayout(line)
+        line = QHBoxLayout()
+        self.sync = QPushButton('Sync targets to feedback')
+        self.go = QPushButton('Go to targets')
+        self.cancel = QPushButton('Cancel motion')
+        self.start = QPushButton('START motors')
+        self.stop = QPushButton('STOP motors')
+        for button, callback in ((self.sync, self.synchronize), (self.go, self.send_goal),
+                                 (self.cancel, self.cancel_motion),
+                                 (self.start, lambda: self.power(True)),
+                                 (self.stop, self.stop_motors)):
+            button.clicked.connect(callback)
+            line.addWidget(button)
+        layout.addLayout(line)
+        layout.addWidget(QLabel('GoTo: prepare targets, then click Go. Continuous: start streaming, then move sliders.\n'
+                                'STOP is a software middleware request, not an emergency stop.'))
+        self.log = QPlainTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setMaximumBlockCount(200)
+        layout.addWidget(self.log)
+        self.timer = QTimer(self.widget)
+        self.timer.timeout.connect(self.refresh)
+        self.timer.start(100)
+        self.stream_timer = QTimer(self.widget)
+        self.stream_timer.setInterval(50)
+        self.stream_timer.timeout.connect(self.publish_continuous)
+        context.add_widget(self.widget)
+        if not args.joint_config:
+            try:
+                self.config.setText(resolve_panel_config('',
+                    os.environ.get('EC_CFG', ''), os.environ.get('ROS2_CFG', '')))
+            except (ValueError, OSError, KeyError, yaml.YAMLError) as error:
+                self.note(str(error))
+        if self.config.text():
+            self.connect_robot()
+        self.refresh()
+
+    def note(self, text):
+        self.log.appendPlainText(str(text))
+
+    def browse(self):
+        path, _ = QFileDialog.getOpenFileName(self.widget, 'Joint configuration', '', 'YAML (*.yaml *.yml)')
+        if path:
+            self.config.setText(path)
+
+    def endpoint(self, name):
+        return '/' + '/'.join(filter(None, [self.robot_namespace.strip('/'), name]))
+
+    def connect_robot(self):
+        if self.busy or self.power_busy or self.streaming or self.mode_pending:
+            return
+        try:
+            namespace = '/' + self.namespace.text().strip().strip('/')
+            validate_namespace(namespace)
+            joints = load_joints(self.config.text(), namespace)
+            velocities = load_velocities(self.config.text(), namespace, joints)
+        except (ValueError, OSError, TypeError, AttributeError, yaml.YAMLError) as error:
+            self.note(f'Configuration rejected : {error}')
+            return
+        self.disconnect_robot()
+        self.robot_namespace = namespace
+        self.joints = joints
+        self.max_velocities = velocities
+        self.mode_ready = False
+        self.mode_attempted = False
+        self.mode.blockSignals(True)
+        self.mode.setCurrentIndex(0)
+        self.mode.blockSignals(False)
+        self.values = None
+        self.received = 0.0
+        self.initialized = False
+        while self.grid.count():
+            item = self.grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.rows = []
+        self.checks = []
+        for col, label in enumerate(('Joint', 'Measured', 'Target', 'Target position', 'Limits', 'Command')):
+            self.grid.addWidget(QLabel(label), 0, col)
+        for row, (name, lo, hi) in enumerate(joints, 1):
+            actual = QLabel('—')
+            spin = QDoubleSpinBox()
+            spin.setDecimals(6)
+            spin.setRange(lo, hi)
+            spin.setSingleStep(0.01)
+            slider = QSlider(Qt.Horizontal)
+            slider.setRange(0, 10000)
+            def slide(value, s=spin, low=lo, high=hi):
+                s.setValue(low + (high - low) * value / 10000)
+            def change(value, s=slider, low=lo, high=hi):
+                s.blockSignals(True)
+                s.setValue(round(10000 * (value - low) / (high - low)) if high > low else 0)
+                s.blockSignals(False)
+            slider.valueChanged.connect(slide)
+            spin.valueChanged.connect(change)
+            change(spin.value())
+            for col, widget in enumerate((QLabel(name), actual, spin, slider, QLabel(f'{lo:g} … {hi:g}'))):
+                self.grid.addWidget(widget, row, col)
+            check = QCheckBox()
+            check.setChecked(True)
+            check.stateChanged.connect(self.refresh)
+            self.grid.addWidget(check, row, 5)
+            self.checks.append(check)
+            self.rows.append((actual, spin, slider))
+        # Capture a generation token so queued messages from an old connection are ignored.
+        token = self.token = object()
+        def state_callback(message):
+            self.dispatch.state.emit((token, message, time.monotonic()))
+        self.subscription = self.node.create_subscription(
+            JointState, self.endpoint('rx/joint_states'), state_callback, qos_profile_sensor_data)
+        self.action = ActionClient(self.node, GoToJointPositions, self.endpoint('go_to_joint_positions'))
+        self.clients = [self.node.create_client(Trigger, self.endpoint(name))
+                        for name in ('start_motors', 'stop_motors')]
+        self.command_publisher = self.node.create_publisher(JointState, self.endpoint('joint_commands'), 1)
+        self.mode_clients = [self.node.create_client(SetBool, self.endpoint(name))
+                             for name in ('set_trajectory_enabled', 'set_direct_enabled')]
+        self.note(f'Connected to {self.endpoint("")} ; waiting for feedback. Motors are never started automatically.')
+        self.refresh()
+
+    def receive(self, packet):
+        token, message, received = packet
+        if self.closed or token is not self.token:
+            return
+        try:
+            values = measured_positions(message.name, message.position, self.joints)
+        except (KeyError, ValueError, TypeError):
+            return
+        self.values, self.received = values, received
+        for value, (label, _, _) in zip(values, self.rows):
+            label.setText(f'{value:.6f}')
+        if not self.initialized and self.fresh() and self.within_limits():
+            self.synchronize()
+        self.refresh()
+
+    def fresh(self):
+        return self.values is not None and time.monotonic() - self.received < 0.5
+
+    def within_limits(self):
+        return self.values is not None and all(lo <= v <= hi for v, (_, lo, hi) in zip(self.values, self.joints))
+
+    def synchronize(self):
+        if self.busy or self.streaming or not self.fresh() or not self.within_limits():
+            return
+        for value, (_, spin, _) in zip(self.values, self.rows):
+            spin.setValue(value)
+        self.initialized = True
+        self.note('Targets synchronized to measured positions. No command sent.')
+
+    def selected_indices(self):
+        return [i for i, check in enumerate(self.checks) if check.isChecked()]
+
+    def mode_changed(self, *_):
+        self.mode_ready = False
+        self.mode_attempted = False
+        self.refresh()
+
+    def apply_mode(self):
+        if (self.busy or self.streaming or self.power_busy or self.mode_pending
+                or not self.mode_clients):
+            return
+        self.mode_ready = False
+        self.mode_attempted = True
+        if not all(client.service_is_ready() for client in self.mode_clients):
+            self.note('Mode services unavailable. Start both controllers using panel.launch.py.')
+            self.refresh()
+            return
+        self.mode_pending = True
+        target = self.mode.currentIndex()  # 0: trajectory, 1: direct
+        self.note('Switching command mode: disabling the other controller first…')
+        self.later(self.mode_clients[1 - target].call_async(SetBool.Request(data=False)),
+                   lambda response: self.other_disabled(response, target))
+        self.refresh()
+
+    def other_disabled(self, response, target):
+        if not response.success:
+            self.mode_pending = False
+            self.note('Mode switch rejected: ' + response.message)
+            return
+        self.later(self.mode_clients[target].call_async(SetBool.Request(data=True)),
+                   self.mode_enabled)
+
+    def mode_enabled(self, response):
+        self.mode_pending = False
+        self.mode_ready = response.success
+        self.note(response.message)
+        if response.success and self.fresh() and self.within_limits():
+            self.synchronize()
+
+    def toggle_stream(self):
+        if self.streaming:
+            self.stop_stream()
+            return
+        if not self.stream.isEnabled() or not self.fresh() or not self.within_limits():
+            return
+        self.stream_indices = self.selected_indices()
+        self.references = list(self.values)
+        self.last_stream = time.monotonic()
+        self.streaming = True
+        self.stream_timer.start()
+        self.note('Continuous commands started at 20 Hz for selected joints; velocity-limited position references.')
+        self.refresh()
+
+    def stop_stream(self, reason='Continuous commands stopped. No motor STOP sent.'):
+        if self.streaming:
+            self.streaming = False
+            self.stream_timer.stop()
+            self.note(reason)
+        self.refresh()
+
+    def publish_continuous(self):
+        if not self.streaming:
+            return
+        now = time.monotonic()
+        dt = now - self.last_stream
+        if not self.fresh() or not self.within_limits() or dt > 0.25:
+            self.stop_stream('Continuous commands stopped: stale/invalid feedback or delayed UI timer. Restart explicitly.')
+            return
+        if not self.command_publisher.get_subscription_count():
+            self.stop_stream('Continuous commands stopped: no joint_commands subscriber.')
+            return
+        self.last_stream = now
+        for i in self.stream_indices:
+            target = self.rows[i][1].value()
+            step = self.max_velocities[i] * self.velocity.value() * dt
+            self.references[i] += max(-step, min(step, target - self.references[i]))
+        message = JointState()
+        message.header.stamp = self.node.get_clock().now().to_msg()
+        message.name = [self.joints[i][0] for i in self.stream_indices]
+        message.position = [self.references[i] for i in self.stream_indices]
+        self.command_publisher.publish(message)
+
+    def refresh(self, *_):
+        connected = self.action is not None
+        fresh = self.fresh()
+        ready = connected and fresh and self.within_limits() and self.initialized
+        if self.streaming and (not fresh or not self.within_limits()):
+            self.streaming = False
+            self.stream_timer.stop()
+            self.note('Continuous commands stopped: feedback missing, stale or outside limits. Restart explicitly.')
+        idle = not self.busy and not self.power_busy and not self.stopping and not self.mode_pending
+        available = bool(self.mode_clients and all(c.service_is_ready() for c in self.mode_clients))
+        if connected and idle and not self.streaming and available and not self.mode_attempted:
+            self.apply_mode()
+            return
+        selected = bool(self.selected_indices())
+        direct = self.mode.currentIndex() == 1
+        self.go.setEnabled(bool(ready and idle and selected and self.mode_ready and not direct
+                                and self.action.server_is_ready()))
+        self.sync.setEnabled(bool(ready and idle and not self.streaming))
+        self.start.setEnabled(bool(ready and idle and not self.streaming and self.clients[0].service_is_ready()))
+        self.stop.setEnabled(bool(connected and not self.power_busy and not self.stopping
+                                  and self.clients[1].service_is_ready()))
+        self.cancel.setEnabled(self.busy and not self.cancel_requested)
+        self.stream.setText('Stop continuous commands' if self.streaming else 'Start continuous commands')
+        self.stream.setEnabled(bool(self.streaming or (ready and idle and selected and direct
+            and self.mode_ready and self.command_publisher.get_subscription_count())))
+        self.mode.setEnabled(idle and not self.streaming)
+        self.apply_mode_button.setEnabled(bool(connected and idle and not self.streaming))
+        self.connect_button.setEnabled(idle and not self.streaming)
+        self.config.setEnabled(idle and not self.streaming)
+        self.namespace.setEnabled(idle and not self.streaming)
+        self.acceleration.setEnabled(not direct and idle)
+        for check in self.checks:
+            check.setEnabled(idle and not self.streaming)
+        for i, (_, spin, slider) in enumerate(self.rows):
+            editable = bool(ready and idle and self.checks[i].isChecked())
+            spin.setEnabled(editable)
+            slider.setEnabled(editable)
+        state = 'Feedback valid' if fresh else 'Feedback missing or stale'
+        if fresh and not self.within_limits():
+            state = 'Measured position outside limits: commands disabled'
+        self.status.setText(state + (' · motion in progress' if self.busy else '')
+                            + (' · streaming joint_commands' if self.streaming else '')
+                            + (' · switching mode' if self.mode_pending else '')
+                            + (' · power request pending' if self.power_busy else ''))
+
+    def later(self, future, callback):
+        def done(result):
+            if not self.closed:
+                self.dispatch.run.emit(lambda: self.complete(result, callback))
+        future.add_done_callback(done)
+
+    def complete(self, future, callback):
+        if self.closed:
+            return
+        try:
+            callback(future.result())
+        except Exception as error:
+            # Do not assume an in-flight command failed or clear its ownership.
+            self.note(f'ROS error, verify robot state : {error}')
+        self.refresh()
+
+    def send_goal(self):
+        if not self.go.isEnabled() or not self.fresh():
+            return
+        goal = GoToJointPositions.Goal()
+        selected = self.selected_indices()
+        goal.joint_names = [self.joints[i][0] for i in selected]
+        goal.positions = [self.rows[i][1].value() for i in selected]
+        goal.velocity_scaling = self.velocity.value()
+        goal.acceleration_scaling = self.acceleration.value()
+        self.busy = True
+        self.cancel_requested = False
+        self.refresh()
+        self.note('Sending GoTo…')
+        self.later(self.action.send_goal_async(goal), self.goal_response)
+
+    def goal_response(self, handle):
+        if not handle.accepted:
+            self.busy = False
+            self.note('GoTo rejected.')
+            self.after_motion()
+            return
+        self.handle = handle
+        self.note('GoTo accepted.')
+        self.later(handle.get_result_async(), self.goal_result)
+        if self.cancel_requested:
+            self.request_cancel()
+
+    def goal_result(self, response):
+        self.busy = False
+        self.handle = None
+        self.note(f'GoTo finished : status={response.status}, code={response.result.error_code} · '
+                  f'{response.result.message}')
+        self.after_motion()
+
+    def cancel_motion(self):
+        if self.busy:
+            self.cancel_requested = True
+            if self.handle:
+                self.request_cancel()
+            self.refresh()
+
+    def request_cancel(self):
+        self.later(self.handle.cancel_goal_async(), self.cancel_response)
+
+    def cancel_response(self, response):
+        self.note('Cancellation accepted; waiting for completion.' if response.goals_canceling
+                  else 'Cancellation rejected; waiting for motion result.')
+        if not response.goals_canceling:
+            self.cancel_requested = False
+
+    def stop_motors(self):
+        if not self.stop.isEnabled():
+            return
+        self.stop_stream()
+        self.stopping = True
+        if self.busy:
+            self.note('STOP requested: cancelling motion before stopping motors.')
+            self.cancel_motion()
+        else:
+            self.power(False)
+        self.refresh()
+
+    def after_motion(self):
+        if self.stopping:
+            self.power(False)
+
+    def power(self, start):
+        if self.power_busy or (start and not self.start.isEnabled()):
+            return
+        client = self.clients[0 if start else 1]
+        if not client.service_is_ready():
+            self.note('Motor service unavailable; motor state unknown.')
+            self.stopping = False
+            return
+        self.power_busy = True
+        self.note(('START' if start else 'STOP') + ' requested…')
+        self.refresh()
+        self.later(client.call_async(Trigger.Request()), self.power_result)
+
+    def power_result(self, response):
+        self.power_busy = False
+        self.stopping = False
+        self.note(f'Power : success={response.success} · {response.message}')
+
+    def disconnect_robot(self):
+        for client in self.mode_clients:
+            self.node.destroy_client(client)
+        self.mode_clients = []
+        if self.command_publisher:
+            self.node.destroy_publisher(self.command_publisher)
+            self.command_publisher = None
+        if self.subscription:
+            self.node.destroy_subscription(self.subscription)
+            self.subscription = None
+        if self.action:
+            self.action.destroy()
+            self.action = None
+        for client in self.clients:
+            self.node.destroy_client(client)
+        self.clients = []
+
+    def shutdown_plugin(self):
+        self.closed = True
+        self.timer.stop()
+        self.stream_timer.stop()
+        self.streaming = False
+        # Closing a panel is not a motor power command.
+        if self.handle and self.busy:
+            self.handle.cancel_goal_async()
+        self.disconnect_robot()

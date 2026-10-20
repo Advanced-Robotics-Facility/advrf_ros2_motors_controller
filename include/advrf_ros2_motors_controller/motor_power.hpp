@@ -30,7 +30,8 @@ struct MotorPowerResult
 namespace middleware_msgs
 {
 // gains.type == 0 means that START must retain the drive's existing gains.
-advrf_interfaces::srv::ReplCmd::Request motor_start_request(int32_t board_id, ControlMode mode);
+advrf_interfaces::srv::ReplCmd::Request motor_start_request(
+    int32_t board_id, ControlMode mode, const std::vector<double> &start_gains = {});
 advrf_interfaces::srv::ReplCmd::Request motor_stop_request(int32_t board_id);
 } // namespace middleware_msgs
 
@@ -42,7 +43,9 @@ public:
   using Completion = std::function<void(MotorPowerResult)>;
 
   MotorPowerClient(rclcpp::Node &node, const MotorsDefinition &motors,
-                   const std::vector<std::string> &joints, double timeout = 3.0);
+                   const std::vector<std::string> &joints, double timeout = 3.0,
+                   const std::vector<double> &start_gains = {},
+                   const std::vector<double> &start_joint_gains = {});
   void start(ControlMode mode, Completion completion);
   // STOP attempts every configured motor, even if an earlier STOP fails.
   void stop(Completion completion);

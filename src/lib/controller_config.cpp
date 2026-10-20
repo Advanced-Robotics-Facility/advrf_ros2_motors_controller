@@ -19,14 +19,10 @@ ControllerConfig ControllerConfig::declare(rclcpp::Node &node)
     throw std::invalid_argument("Provide robot_id_map pointing to robot_id_map.yaml");
   }
   config.motors = MotorsDefinition::load(id_map, config.joints);
-  config.lower =
-      node.declare_parameter<std::vector<double>>("position_lower", std::vector<double>{});
-  config.upper =
-      node.declare_parameter<std::vector<double>>("position_upper", std::vector<double>{});
-  config.velocity =
-      node.declare_parameter<std::vector<double>>("max_velocity", std::vector<double>{});
-  config.acceleration =
-      node.declare_parameter<std::vector<double>>("max_acceleration", std::vector<double>{});
+  config.lower = node.declare_parameter<std::vector<double>>("position_lower", std::vector<double>{});
+  config.upper = node.declare_parameter<std::vector<double>>("position_upper", std::vector<double>{});
+  config.velocity = node.declare_parameter<std::vector<double>>("max_velocity", std::vector<double>{});
+  config.acceleration = node.declare_parameter<std::vector<double>>("max_acceleration", std::vector<double>{});
 
   const auto n = config.joints.size();
   if (config.lower.size() != n || config.upper.size() != n || config.velocity.size() != n ||
@@ -61,6 +57,29 @@ ControllerConfig ControllerConfig::declare(rclcpp::Node &node)
     }
 
     config.gains[i] = static_cast<float>(gains[i]);
+  }
+
+  const auto joint_gains = node.declare_parameter<std::vector<double>>("joint_gains", std::vector<double>{});
+  if (!joint_gains.empty())
+  {
+    if (joint_gains.size() != 5 * n)
+    {
+      throw std::invalid_argument("joint_gains must contain five gains per configured joint");
+    }
+    for (size_t joint = 0; joint < n; ++joint)
+    {
+      std::array<float, 5> values{};
+      for (size_t i = 0; i < 5; ++i)
+      {
+        const double value = joint_gains[5 * joint + i];
+        if (!std::isfinite(value) || std::abs(value) > std::numeric_limits<float>::max())
+        {
+          throw std::invalid_argument("Invalid joint gain");
+        }
+        values[i] = static_cast<float>(value);
+      }
+      config.motors.set_gains(config.joints[joint], values);
+    }
   }
 
   return config;

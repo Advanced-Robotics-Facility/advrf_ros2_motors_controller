@@ -64,13 +64,15 @@ class MotorPowerTest(unittest.TestCase):
                 self.assertTrue(future.done(), 'Service timed out')
                 return future.result()
 
-            def launch(auto_start):
+            def launch(auto_start, start_gains=None, mode="impedance", start_joint_gains=None):
                 nonlocal process
                 process = subprocess.Popen([
                     sys.argv[1], '--ros-args', '--params-file', str(config),
-                    '-r', '__ns:=/power_test', '-p', 'control_mode:=impedance',
+                    '-r', '__ns:=/power_test', '-p', f'control_mode:={mode}',
                     '-p', f'auto_start_motors:={str(auto_start).lower()}',
-                ], stdout=log, stderr=log)
+                ] + (['-p', f'start_gains:={start_gains}'] if start_gains is not None else [])
+                  + (['-p', f'start_joint_gains:={start_joint_gains}'] if start_joint_gains is not None else []),
+                    stdout=log, stderr=log)
                 self.assertTrue(start.wait_for_service(timeout_sec=5))
                 self.assertTrue(stop.wait_for_service(timeout_sec=5))
                 spin(0.2)
@@ -127,6 +129,40 @@ class MotorPowerTest(unittest.TestCase):
                     spin(0.4)
                     self.assertEqual([r.ctrl_cmd.board_id for r in requests], [7, 2])
                     self.assertTrue(all(r.ctrl_cmd.type == 11 for r in requests))
+
+                    # Explicit START gains reproduce the validated ReplCmd payload.
+                    process.terminate()
+                    process.wait(timeout=5)
+                    requests.clear()
+                    launch(False, [0.1, 0.0, 0.0005, 0.0, 0.0], mode='position')
+                    self.assertEqual(requests, [])
+                    self.assertTrue(wait(start.call_async(Trigger.Request())).success)
+                    for request in requests:
+                        self.assertEqual(request.type, 2)
+                        self.assertEqual(request.ctrl_cmd.type, 11)
+                        self.assertEqual(request.ctrl_cmd.value, 59.0)
+                        gains = request.ctrl_cmd.gains
+                        self.assertEqual(gains.type, 59)
+                        self.assertEqual([gains.pos_kp, gains.pos_kd, gains.tor_kp,
+                                          gains.tor_ki, gains.tor_kd],
+                                         [0.1, 0.0, 0.0005, 0.0, 0.0])
+                    requests.clear()
+                    self.assertTrue(wait(stop.call_async(Trigger.Request())).success)
+                    self.assertTrue(all(r.ctrl_cmd.type == 12 and r.ctrl_cmd.gains.type == 0
+                                        for r in requests))
+                    process.terminate()
+                    process.wait(timeout=5)
+                    requests.clear()
+                    launch(False, mode='position', start_joint_gains=[1., 2., 3., 4., 5., 6., 7., 8., 9., 10.])
+                    self.assertTrue(wait(start.call_async(Trigger.Request())).success)
+                    self.assertEqual([r.ctrl_cmd.board_id for r in requests], [7, 2])
+                    self.assertEqual([r.ctrl_cmd.gains.pos_kp for r in requests], [1., 6.])
+                    self.assertEqual([r.ctrl_cmd.gains.tor_kd for r in requests], [5., 10.])
+                    self.assertTrue(all(r.ctrl_cmd.gains.type == 59 for r in requests))
+                    # Profile gains are mode-specific; changing mode requires a restart/profile reload.
+                    result = wait(parameters.set_parameters([
+                        Parameter('control_mode', value='impedance')]))
+                    self.assertFalse(result.results[0].successful)
                 finally:
                     if process is not None:
                         process.terminate()

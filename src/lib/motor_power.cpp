@@ -4,37 +4,30 @@
 #include <cmath>
 #include <optional>
 #include <stdexcept>
+#include <map>
 
 namespace advrf_ros2_motors_controller
 {
 ControlMode control_mode_from_string(const std::string &name)
 {
-  if (name == "position")
+  static const std::map<std::string, ControlMode> modes{
+      {"position", ControlMode::Position},   {"velocity", ControlMode::Velocity},
+      {"impedance", ControlMode::Impedance}, {"torque", ControlMode::Torque},
+      {"current", ControlMode::Current},
+  };
+
+  const auto it = modes.find(name);
+  if (it == modes.end())
   {
-    return ControlMode::Position;
+    throw std::invalid_argument("Unknown control_mode: " + name);
   }
-  if (name == "velocity")
-  {
-    return ControlMode::Velocity;
-  }
-  if (name == "impedance")
-  {
-    return ControlMode::Impedance;
-  }
-  if (name == "torque")
-  {
-    return ControlMode::Torque;
-  }
-  if (name == "current")
-  {
-    return ControlMode::Current;
-  }
-  throw std::invalid_argument("Unknown control_mode: " + name);
+  return it->second;
 }
 
 namespace middleware_msgs
 {
-advrf_interfaces::srv::ReplCmd::Request motor_start_request(int32_t board_id, ControlMode mode)
+advrf_interfaces::srv::ReplCmd::Request motor_start_request(
+    int32_t board_id, ControlMode mode, const std::vector<double> &start_gains)
 {
   if (board_id < 0)
   {
@@ -56,7 +49,23 @@ advrf_interfaces::srv::ReplCmd::Request motor_start_request(int32_t board_id, Co
   request.request.ctrl_cmd.type = advrf_interfaces::msg::CtrlCmd::CTRL_CMD_START;
   request.request.ctrl_cmd.board_id = board_id;
   request.request.ctrl_cmd.value = static_cast<uint8_t>(mode);
-  // Leave gains unspecified: the middleware must omit the protobuf gains submessage.
+  if (!start_gains.empty())
+  {
+    if (start_gains.size() != 5 ||
+        !std::all_of(start_gains.begin(), start_gains.end(),
+                     [](double value) { return std::isfinite(value); }))
+    {
+      throw std::invalid_argument("start_gains must contain five finite values or be empty");
+    }
+    auto &gains = request.request.ctrl_cmd.gains;
+    gains.type = static_cast<uint8_t>(mode);
+    gains.pos_kp = start_gains[0];
+    gains.pos_kd = start_gains[1];
+    gains.tor_kp = start_gains[2];
+    gains.tor_ki = start_gains[3];
+    gains.tor_kd = start_gains[4];
+  }
+  // Empty start_gains leaves gains.type=0, requesting middleware gain preservation.
   return request;
 }
 
@@ -81,6 +90,7 @@ struct MotorPowerClient::State
   using Clock = std::chrono::steady_clock;
 
   std::vector<int32_t> ids;
+  std::vector<std::vector<double>> start_gains;
   Client::SharedPtr client;
   rclcpp::TimerBase::SharedPtr timer;
   std::optional<Client::FutureAndRequestId> pending;
@@ -113,7 +123,7 @@ struct MotorPowerClient::State
     }
     if (start)
     {
-      (void)middleware_msgs::motor_start_request(ids.front(), selected);
+      (void)middleware_msgs::motor_start_request(ids.front(), selected, start_gains.front());
     }
     completion = std::move(callback);
     result = MotorPowerResult{};
@@ -207,7 +217,7 @@ struct MotorPowerClient::State
       }
       return;
     }
-    const auto request = starting ? middleware_msgs::motor_start_request(ids[index], mode)
+    const auto request = starting ? middleware_msgs::motor_start_request(ids[index], mode, start_gains[index])
                                   : middleware_msgs::motor_stop_request(ids[index]);
     try
     {
@@ -222,12 +232,31 @@ struct MotorPowerClient::State
 };
 
 MotorPowerClient::MotorPowerClient(rclcpp::Node &node, const MotorsDefinition &motors,
-                                   const std::vector<std::string> &joints, double timeout)
+                                   const std::vector<std::string> &joints, double timeout,
+                                   const std::vector<double> &start_gains,
+                                   const std::vector<double> &start_joint_gains)
     : state_(std::make_shared<State>())
 {
   if (joints.empty() || !std::isfinite(timeout) || timeout <= 0)
   {
     throw std::invalid_argument("MotorPowerClient requires joints and a positive timeout");
+  }
+  // Validate explicit gains before exposing motor power services.
+  (void)middleware_msgs::motor_start_request(0, ControlMode::Position, start_gains);
+  if (!start_joint_gains.empty() && start_joint_gains.size() != 5 * joints.size())
+  {
+    throw std::invalid_argument("start_joint_gains must contain five gains per configured joint");
+  }
+  for (size_t i = 0; i < joints.size(); ++i)
+  {
+    // Explicit shared START gains override profile-derived per-joint START gains.
+    std::vector<double> values = start_gains;
+    if (values.empty() && !start_joint_gains.empty())
+    {
+      values.assign(start_joint_gains.begin() + 5 * i, start_joint_gains.begin() + 5 * (i + 1));
+    }
+    (void)middleware_msgs::motor_start_request(0, ControlMode::Position, values);
+    state_->start_gains.push_back(std::move(values));
   }
   state_->timeout = timeout;
   for (const auto &joint : joints)

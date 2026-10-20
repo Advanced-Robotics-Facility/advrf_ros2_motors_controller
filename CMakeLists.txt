@@ -36,12 +36,12 @@ ament_target_dependencies(motors_controller_common rclcpp sensor_msgs advrf_inte
 add_executable(joint_trajectory_controller_node src/nodes/joint_trajectory_controller_node.cpp)
 target_link_libraries(joint_trajectory_controller_node motors_controller_common)
 target_compile_options(joint_trajectory_controller_node PRIVATE -Wall -Wextra -Wpedantic)
-ament_target_dependencies(joint_trajectory_controller_node rclcpp rclcpp_action control_msgs sensor_msgs advrf_interfaces)
+ament_target_dependencies(joint_trajectory_controller_node rclcpp rclcpp_action control_msgs sensor_msgs advrf_interfaces std_srvs)
 
 add_executable(joint_command_controller_node src/nodes/joint_command_controller_node.cpp)
 target_link_libraries(joint_command_controller_node motors_controller_common)
 target_compile_options(joint_command_controller_node PRIVATE -Wall -Wextra -Wpedantic)
-ament_target_dependencies(joint_command_controller_node rclcpp sensor_msgs advrf_interfaces)
+ament_target_dependencies(joint_command_controller_node rclcpp sensor_msgs advrf_interfaces std_srvs)
 
 add_executable(joint_go_to_node src/nodes/joint_go_to_node.cpp)
 target_link_libraries(joint_go_to_node motors_controller_common)
@@ -59,7 +59,7 @@ install(TARGETS motors_controller_common motors_controller_math EXPORT export_mo
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
-install(FILES README.md DESTINATION share/${PROJECT_NAME})
+install(FILES README.md plugin.xml DESTINATION share/${PROJECT_NAME})
 ament_export_targets(export_motors_controller_common HAS_LIBRARY_TARGET)
 ament_export_dependencies(yaml-cpp rclcpp rclcpp_action control_msgs trajectory_msgs sensor_msgs builtin_interfaces advrf_interfaces)
 
@@ -70,6 +70,16 @@ if(BUILD_TESTING)
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_launch_config.py"
     APPEND_ENV "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}"
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO)
+  ament_add_test(test_motor_profiles
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_motor_profiles.py"
+    APPEND_ENV "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}"
+    GENERATE_RESULT_FOR_RETURN_CODE_ZERO)
+  ament_add_test(test_motor_panel
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_motor_panel.py"
+    ENV "ROS_DOMAIN_ID=218" "ROS_LOCALHOST_ONLY=1" "QT_QPA_PLATFORM=offscreen"
+      "ROS_LOG_DIR=/tmp/advrf_panel_test_logs" "ROS_HOME=/tmp/advrf_panel_test_ros"
+    GENERATE_RESULT_FOR_RETURN_CODE_ZERO
+    TIMEOUT 30)
   ament_add_test(test_motor_power
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_motor_power.py"
       "$<TARGET_FILE:motor_power_node>"

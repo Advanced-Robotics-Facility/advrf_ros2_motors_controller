@@ -13,6 +13,7 @@ from rclpy.action import ActionClient
 from action_msgs.msg import GoalStatus
 from control_msgs.action import FollowJointTrajectory
 from sensor_msgs.msg import JointState
+from std_srvs.srv import SetBool
 from trajectory_msgs.msg import JointTrajectoryPoint
 from advrf_interfaces.msg import MotorTxPdoVector
 
@@ -45,6 +46,7 @@ class ActionTest(unittest.TestCase):
             positions = {7: 0.0, 2: 0.0}
             received = []
             feedback = []
+            mode = node.create_client(SetBool, 'set_trajectory_enabled')
             follow = [True]
             enabled = [True]
 
@@ -100,6 +102,16 @@ class ActionTest(unittest.TestCase):
                 self.assertTrue(feedback)
                 self.assertTrue(any(abs(p.pos_ref - 0.2) < 0.005 for m in received for p in m.data if p.ecat_id == 2))
                 self.assertTrue(any(0 < p.pos_ref < 0.19 for m in received for p in m.data if p.ecat_id == 2))
+                self.assertTrue(mode.wait_for_service(timeout_sec=3))
+                self.assertTrue(wait(mode.call_async(SetBool.Request(data=False))).success)
+                spin(0.1)
+                count = len(received)
+                spin(0.15)
+                self.assertEqual(len(received), count, 'Disabled trajectory hold published')
+                self.assertFalse(wait(client.send_goal_async(goal(0.2))).accepted)
+                self.assertTrue(wait(mode.call_async(SetBool.Request(data=True))).success)
+                spin(0.15)
+                self.assertEqual(len(received), count, 'Old hold resumed after mode change')
                 self.assertFalse(wait(client.send_goal_async(goal(9))).accepted)
                 old = goal(0.2)
                 old.trajectory.header.stamp.sec = node.get_clock().now().seconds_nanoseconds()[0] - 1
@@ -109,6 +121,8 @@ class ActionTest(unittest.TestCase):
                 self.assertFalse(wait(client.send_goal_async(unknown)).accepted)
                 h = wait(client.send_goal_async(goal(0.3, 3)))
                 self.assertTrue(h.accepted)
+                self.assertFalse(wait(mode.call_async(SetBool.Request(data=False))).success,
+                                 'Mode changed while a trajectory was active')
                 self.assertFalse(wait(client.send_goal_async(goal(0.1))).accepted)
                 self.assertTrue(wait(h.cancel_goal_async()).goals_canceling)
                 self.assertEqual(wait(h.get_result_async()).status, GoalStatus.STATUS_CANCELED)

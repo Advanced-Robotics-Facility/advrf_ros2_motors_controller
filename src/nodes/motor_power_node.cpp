@@ -15,10 +15,28 @@ public:
         declare_parameter<std::vector<std::string>>("joints", std::vector<std::string>{});
     const auto motors =
         MotorsDefinition::load(declare_parameter<std::string>("robot_id_map", ""), joints);
-    const auto mode =
-        control_mode_from_string(declare_parameter<std::string>("control_mode", "position"));
+    rcl_interfaces::msg::ParameterDescriptor gains_descriptor;
+    gains_descriptor.read_only = true;
+    gains_descriptor.description = "Optional START gains: pos_kp, pos_kd, tor_kp, tor_ki, tor_kd";
+    const auto start_gains = declare_parameter<std::vector<double>>(
+        "start_gains", std::vector<double>{}, gains_descriptor);
+    const auto start_joint_gains = declare_parameter<std::vector<double>>(
+        "start_joint_gains", std::vector<double>{}, gains_descriptor);
+    rcl_interfaces::msg::ParameterDescriptor mode_descriptor;
+    mode_descriptor.read_only = !start_joint_gains.empty();
+    mode_descriptor.description = "Restart with a matching motor profile to change the drive mode";
+    const auto mode = control_mode_from_string(
+        declare_parameter<std::string>("control_mode", "position", mode_descriptor));
     power_ = std::make_unique<MotorPowerClient>(*this, motors, joints,
-                                                declare_parameter("motor_service_timeout", 3.0));
+        declare_parameter("motor_service_timeout", 3.0), start_gains, start_joint_gains);
+
+    const auto configured_gains = get_parameter("start_gains").as_double_array();
+    RCLCPP_INFO(get_logger(), "START configuration: mode=%s (0x%02X), gains=%s",
+                get_parameter("control_mode").as_string().c_str(), static_cast<unsigned>(mode),
+                configured_gains.empty() ? (get_parameter("start_joint_gains").as_double_array().empty()
+                    ? "unspecified (middleware preservation required)"
+                    : get_parameter("start_joint_gains").value_to_string().c_str())
+                                         : get_parameter("start_gains").value_to_string().c_str());
 
     start_ = create_service<Trigger>("start_motors",
                                      [this](Service::SharedPtr service,

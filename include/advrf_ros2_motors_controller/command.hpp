@@ -43,11 +43,12 @@ from_joint_values(const std::vector<std::string> &joints, const std::vector<doub
     p.ecat_id = motors.get_ecat_id(joints[i]);
     p.pos_ref = static_cast<float>(position);
     p.vel_ref = static_cast<float>(velocity);
-    p.gain_0 = gains[0];
-    p.gain_1 = gains[1];
-    p.gain_2 = gains[2];
-    p.gain_3 = gains[3];
-    p.gain_4 = gains[4];
+    const auto &selected_gains = motors.gains_for_joint(joints[i], gains);
+    p.gain_0 = selected_gains[0];
+    p.gain_1 = selected_gains[1];
+    p.gain_2 = selected_gains[2];
+    p.gain_3 = selected_gains[3];
+    p.gain_4 = selected_gains[4];
     out.data.push_back(p);
   }
 

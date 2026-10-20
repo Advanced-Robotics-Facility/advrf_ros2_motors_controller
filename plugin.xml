@@ -1,0 +1,6 @@
+<library path="advrf_ros2_motors_controller">
+  <class name="ADVRF Motors" type="advrf_ros2_motors_controller.motor_panel.MotorPanel" base_class_type="rqt_gui_py::Plugin">
+    <description>Joint targets, measured feedback, GoTo and motor power.</description>
+    <qtgui><group><label>Robot Tools</label></group><label>ADVRF Motors</label><statustip>ADVRF motor control panel</statustip></qtgui>
+  </class>
+</library>
