@@ -1,1 +1,4 @@
 .clang-format
+__pycache__/
+*.pyc
+*.pyo
