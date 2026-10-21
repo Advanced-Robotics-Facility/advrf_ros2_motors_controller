@@ -9,7 +9,7 @@ MODES = {'position': 0x3B, 'impedance': 0xD4, 'velocity': 0x71,
          'torque': 0xCC, 'current': 0xDD}
 
 
-def profile_parameters(joint_config, namespace, mode, directory='', profile='', ec_cfg=''):
+def profile_parameters(joint_limits, namespace, mode, directory='', profile='', ec_cfg=''):
     """Exact-name/explicit alias match; uniform profiles also support renamed joints.
 
     Return None if no profile source was configured. An explicit/discovered source
@@ -45,7 +45,7 @@ def profile_parameters(joint_config, namespace, mode, directory='', profile='', 
     if len(candidates) != 1:
         raise ValueError(f'Expected one {mode} motor profile, found {len(candidates)}; pass motor_profile explicitly')
     path, gains = candidates[0]
-    params = load_parameters(joint_config, namespace)
+    params = load_parameters(joint_limits, namespace)
     joints = params.get('joints', [])
     aliases = params.get('profile_joints', joints)
     if not joints or len(aliases) != len(joints) or len(set(aliases)) != len(aliases):

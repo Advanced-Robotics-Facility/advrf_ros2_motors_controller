@@ -7,6 +7,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import rclpy
 from rclpy.action import ActionServer, CancelResponse
@@ -21,6 +22,24 @@ from advrf_ros2_motors_controller.panel_config import measured_positions
 
 
 class PanelTest(unittest.TestCase):
+    def test_direct_only_mode(self):
+        panel = Mock()
+        panel.mode.currentIndex.return_value = 1
+        trajectory, direct = Mock(), Mock()
+        trajectory.service_is_ready.return_value = False
+        direct.service_is_ready.return_value = True
+        panel.mode_clients = [trajectory, direct]
+        panel.endpoint.return_value = '/bench'
+        panel.node.get_node_names_and_namespaces.return_value = [('controller', '/bench')]
+        with patch('rclpy.action.get_action_server_names_and_types_by_node', return_value=[]) as graph:
+            self.assertTrue(MotorPanel.mode_services_available(panel))
+            graph.return_value = [('/bench/follow', ['control_msgs/action/FollowJointTrajectory'])]
+            self.assertFalse(MotorPanel.mode_services_available(panel))
+            trajectory.service_is_ready.return_value = True
+            self.assertTrue(MotorPanel.mode_services_available(panel))
+            direct.service_is_ready.return_value = False
+            self.assertFalse(MotorPanel.mode_services_available(panel))
+
     def test_panel_with_fake_endpoints(self):
         self.assertEqual(os.environ.get('ROS_DOMAIN_ID'), '218')
         app = QApplication.instance() or QApplication([])
@@ -28,7 +47,7 @@ class PanelTest(unittest.TestCase):
         ui = rclpy.create_node('panel_test_ui')
         fake = rclpy.create_node('panel_test_backend')
         namespace = '/panel_test'
-        config = Path(__file__).resolve().parents[1] / 'config/joint_config.yaml'
+        config = Path(__file__).resolve().parents[1] / 'config/joint_limits.yaml'
         calls, goals, commands, switches = [], [], [], []
         mode_state = [True, False]
         def mode_callback(index):
@@ -67,7 +86,7 @@ class PanelTest(unittest.TestCase):
         class Context(QObject):
             node = ui
             def argv(self):
-                return ['--joint-config', str(config), '--namespace', namespace]
+                return ['--joint-limits', str(config), '--namespace', namespace]
             def add_widget(self, widget):
                 widget.show()
         context = Context()

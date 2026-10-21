@@ -55,7 +55,7 @@ class MotorPanel(Plugin):
         self.dispatch.run.connect(lambda fn: fn())
         self.dispatch.state.connect(self.receive)
         parser = argparse.ArgumentParser()
-        parser.add_argument('--joint-config', default='')
+        parser.add_argument('--joint-limits', default='')
         parser.add_argument('--namespace', default='')
         args = parser.parse_args(context.argv())
         self.widget = QWidget()
@@ -63,7 +63,7 @@ class MotorPanel(Plugin):
         self.widget.setWindowTitle('ADVRF · Joint control')
         layout = QVBoxLayout(self.widget)
         line = QHBoxLayout()
-        self.config = QLineEdit(args.joint_config)
+        self.config = QLineEdit(args.joint_limits)
         browse = QPushButton('Browse…')
         browse.clicked.connect(self.browse)
         line.addWidget(QLabel('Joint config'))
@@ -139,7 +139,7 @@ class MotorPanel(Plugin):
         self.stream_timer.setInterval(50)
         self.stream_timer.timeout.connect(self.publish_continuous)
         context.add_widget(self.widget)
-        if not args.joint_config:
+        if not args.joint_limits:
             try:
                 self.config.setText(resolve_panel_config('',
                     os.environ.get('EC_CFG', ''), os.environ.get('ROS2_CFG', '')))
@@ -278,7 +278,16 @@ class MotorPanel(Plugin):
             return True
         # A GoTo-only setup has no direct controller to disable. If a direct
         # subscriber exists without its gate service, keep movement blocked.
-        return target == 0 and not self.command_publisher.get_subscription_count()
+        if target == 0:
+            return not self.command_publisher.get_subscription_count()
+        from rclpy.action import get_action_server_names_and_types_by_node
+        prefix = self.endpoint('') + '/'
+        return not any(name.startswith(prefix) and any(kind in (
+            'control_msgs/action/FollowJointTrajectory',
+            'advrf_interfaces/action/GoToJointPositions') for kind in kinds)
+            for node_name, node_namespace in self.node.get_node_names_and_namespaces()
+            for name, kinds in get_action_server_names_and_types_by_node(
+                self.node, node_name, node_namespace))
 
     def apply_mode(self):
         if (self.busy or self.streaming or self.power_busy or self.mode_pending
@@ -297,7 +306,7 @@ class MotorPanel(Plugin):
             self.later(self.mode_clients[1 - target].call_async(SetBool.Request(data=False)),
                        lambda response: self.other_disabled(response, target))
         else:
-            self.note('GoTo-only setup: no direct controller connected.')
+            self.note('Single-controller setup: enabling the selected controller…')
             self.later(self.mode_clients[target].call_async(SetBool.Request(data=True)),
                        self.mode_enabled)
         self.refresh()

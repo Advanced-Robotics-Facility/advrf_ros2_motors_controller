@@ -1,0 +1,5 @@
+#!/usr/bin/env python3
+from advrf_ros2_motors_controller.test_trajectory import main
+
+if __name__ == '__main__':
+    raise SystemExit(main())

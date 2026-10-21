@@ -16,6 +16,50 @@ from advrf_ros2_motors_controller.launch_config import resolve_paths
 
 
 class LaunchConfigTest(unittest.TestCase):
+    def test_controller_subdirectory(self):
+        from advrf_ros2_motors_controller.panel_config import resolve_panel_config
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = root / 'ros2/config'
+            directory = config / 'controller'
+            directory.mkdir(parents=True)
+            joint = directory / 'joint_limits.yaml'
+            joint.write_text('/**: {ros__parameters: {joints: [a]}}')
+            mapping = root / 'map.yaml'
+            mapping.write_text('joint_map: {1: a}')
+            ec = root / 'ec.yaml'
+            ec.write_text('robot: {robot_ros2_folder: "${PWD}/ros2", robot_id_map_path: "${PWD}/map.yaml"}')
+            for ros2_cfg in ('', str(config), str(directory)):
+                paths = resolve_paths('', '', str(ec), ros2_cfg, 'joint_limits')
+                self.assertEqual(paths, (str(joint), str(mapping)))
+                self.assertEqual(resolve_panel_config('', str(ec), ros2_cfg), str(joint))
+
+    def test_moveit_limits_and_relocated_trajectory(self):
+        from advrf_ros2_motors_controller.panel_config import load_parameters
+        from advrf_ros2_motors_controller.launch_config import optional_config
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = root / 'config'
+            (config / 'controller').mkdir(parents=True)
+            (root / 'urdf').mkdir()
+            (root / 'urdf/robot.urdf').write_text(
+                '<robot name="test"><joint name="a" type="revolute">'
+                '<limit lower="-2" upper="3" velocity="4"/></joint></robot>')
+            limits = config / 'joint_limits.yaml'
+            limits.write_text('joint_limits: {a: {max_velocity: 2.0, max_acceleration: 1.0}}')
+            params = load_parameters(limits)
+            self.assertEqual(params['position_lower'], [-2.0])
+            self.assertEqual(params['position_upper'], [3.0])
+            self.assertEqual(params['max_velocity'], [2.0])
+            trajectory = config / 'trajectory_config.yaml'
+            trajectory.touch()
+            self.assertEqual(optional_config('', limits, 'trajectory_config'), str(trajectory))
+            self.assertEqual(optional_config('', config / 'controller/unused.yaml',
+                                             'trajectory_config'), str(trajectory))
+            limits.write_text('joint_limits: {unknown: {max_velocity: 1, max_acceleration: 1}}')
+            with self.assertRaisesRegex(ValueError, 'missing position'):
+                load_parameters(limits)
+
     def test_panel_only_launches_client(self):
         from launch.actions import ExecuteProcess
         path = Path(__file__).resolve().parents[1] / 'launch/panel.launch.py'
@@ -23,17 +67,17 @@ class LaunchConfigTest(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         with tempfile.TemporaryDirectory() as temporary:
-            config = Path(temporary) / 'joint_config.yaml'
+            config = Path(temporary) / 'joint_limits.yaml'
             config.write_text('/**: {ros__parameters: {joints: [a]}}')
             with patch.dict('os.environ', {'ROS_LOG_DIR': temporary}):
                 context = LaunchContext()
-                context.launch_configurations.update(joint_config=str(config), namespace='/robot')
+                context.launch_configurations.update(joint_limits=str(config), namespace='/robot')
                 actions = module.setup(context)
                 self.assertEqual(len(actions), 1)
                 self.assertIsInstance(actions[0], ExecuteProcess)
                 description = module.generate_launch_description()
                 args = [e.name for e in description.entities if isinstance(e, DeclareLaunchArgument)]
-                self.assertEqual(args, ['joint_config', 'namespace'])
+                self.assertEqual(args, ['joint_limits', 'namespace'])
 
     def test_references_and_overrides(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -52,7 +96,7 @@ class LaunchConfigTest(unittest.TestCase):
                     f'  robot_ros2_folder: "{reference}"\n'
                     '  robot_id_map_path: "${PWD}/robot_id_map.yaml"\n'
                 )
-                for name in ('trajectory_config', 'joint_config'):
+                for name in ('trajectory_config', 'joint_limits'):
                     with self.subTest(reference=reference, name=name):
                         default_file = config / f'{name}.yaml'
                         default_file.touch()
@@ -73,19 +117,19 @@ class LaunchConfigTest(unittest.TestCase):
                         )
 
             with self.assertRaises(FileNotFoundError):
-                resolve_paths('', '', str(ec_cfg), '/missing/config', 'joint_config')
+                resolve_paths('', '', str(ec_cfg), '/missing/config', 'joint_limits')
             with self.assertRaisesRegex(ValueError, 'Set EC_CFG'):
-                resolve_paths('', '', '', '', 'joint_config')
+                resolve_paths('', '', '', '', 'joint_limits')
             ec_cfg.write_text('robot: {}\n')
             with self.assertRaisesRegex(ValueError, 'robot.robot_ros2_folder'):
-                resolve_paths('', '', str(ec_cfg), '', 'joint_config')
+                resolve_paths('', '', str(ec_cfg), '', 'joint_limits')
 
     def test_go_to_launch_shares_config_and_optional_controller(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             config = root / 'trajectory_config.yaml'
             config.write_text('/**: {ros__parameters: {feedback_timeout: 0.4}}\n')
-            joint = root / 'joint_config.yaml'
+            joint = root / 'joint_limits.yaml'
             joint.write_text('/**: {ros__parameters: {joints: [a], max_velocity: [1.0]}}\n')
             mapping = root / 'robot_id_map.yaml'
             mapping.write_text('joint_map: {1: a}\n')
@@ -93,7 +137,7 @@ class LaunchConfigTest(unittest.TestCase):
                 for start in ('true', 'false'):
                     context = LaunchContext()
                     context.launch_configurations.update({
-                        'joint_config': str(joint),
+                        'joint_limits': str(joint),
                         'trajectory_config': str(config),
                         'robot_id_map': str(mapping),
                         'start_trajectory_controller': start,
@@ -120,7 +164,7 @@ class LaunchConfigTest(unittest.TestCase):
             root = Path(temporary)
             config = root / 'trajectory_config.yaml'
             config.write_text('/**: {ros__parameters: {feedback_timeout: 0.4}}\n')
-            joint = root / 'joint_config.yaml'
+            joint = root / 'joint_limits.yaml'
             joint.write_text('/**: {ros__parameters: {joints: [a], max_velocity: [1.0]}}\n')
             mapping = root / 'robot_id_map.yaml'
             mapping.write_text('joint_map: {1: a}\n')
@@ -128,7 +172,7 @@ class LaunchConfigTest(unittest.TestCase):
                 for auto_start in (False, True):
                     context = LaunchContext()
                     context.launch_configurations.update({
-                        'joint_config': str(joint),
+                        'joint_limits': str(joint),
                         'robot_id_map': str(mapping),
                         'control_mode': 'impedance',
                         'start_gains': '[0.1, 0.0, 0.0005, 0.0, 0.0]',
@@ -136,7 +180,7 @@ class LaunchConfigTest(unittest.TestCase):
                     if auto_start:
                         context.launch_configurations['auto_start_motors'] = 'true'
                     description = controller_launch(
-                        'joint_config', 'motor_power_node', motor_power=True,
+                        'joint_limits', 'motor_power_node', motor_power=True,
                     )
                     for entity in description.entities:
                         if isinstance(entity, DeclareLaunchArgument):
@@ -153,7 +197,7 @@ class LaunchConfigTest(unittest.TestCase):
     def test_optional_overrides_and_precedence(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            joint = root / 'joint_config.yaml'
+            joint = root / 'joint_limits.yaml'
             joint.write_text('/**: {ros__parameters: {joints: [a], feedback_timeout: 0.2}}\n')
             trajectory = root / 'trajectory_config.yaml'
             mapping = root / 'robot_id_map.yaml'
@@ -164,7 +208,7 @@ class LaunchConfigTest(unittest.TestCase):
             def nodes(extra=None):
                 context = LaunchContext()
                 context.launch_configurations.update({
-                    'joint_config': str(joint), 'robot_id_map': str(mapping),
+                    'joint_limits': str(joint), 'robot_id_map': str(mapping),
                 })
                 context.launch_configurations.update(extra or {})
                 description = controller_launch(

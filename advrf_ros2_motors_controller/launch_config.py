@@ -28,6 +28,18 @@ def robot_reference(ec_config, key):
     return path if path.is_absolute() else ec_config.parent / path
 
 
+def configuration_path(directory, config_name):
+    """Find controller files in config/controller, with legacy config support."""
+    directory = Path(directory).expanduser()
+    if config_name in ('joint_limits', 'trajectory_config'):
+        base = directory.parent if directory.name == 'controller' else directory
+        direct = base / f'{config_name}.yaml'
+        if direct.is_file():
+            return direct
+    nested = directory / 'controller' / f'{config_name}.yaml'
+    return nested if nested.is_file() else directory / f'{config_name}.yaml'
+
+
 def resolve_paths(config_file, robot_id_map, ec_cfg, ros2_cfg, config_name):
     """Explicit paths override ROS2_CFG, then references in EC_CFG."""
     needs_ec_config = not robot_id_map or (not config_file and not ros2_cfg)
@@ -42,7 +54,7 @@ def resolve_paths(config_file, robot_id_map, ec_cfg, ros2_cfg, config_name):
             directory = robot_reference(ec_config, 'robot_ros2_folder') / 'config'
         else:
             raise ValueError('Set EC_CFG or ROS2_CFG, or pass an explicit configuration file')
-        config_file = directory / f'{config_name}.yaml'
+        config_file = configuration_path(directory, config_name)
 
     if not robot_id_map:
         if not ec_config:
@@ -58,7 +70,7 @@ def resolve_paths(config_file, robot_id_map, ec_cfg, ros2_cfg, config_name):
     return tuple(paths)
 
 
-def optional_config(explicit_path, joint_config, basename=None):
+def optional_config(explicit_path, joint_limits, basename=None):
     """An explicit override must exist; an absent default override is optional."""
     if explicit_path:
         path = Path(explicit_path).expanduser().resolve(strict=True)
@@ -66,7 +78,7 @@ def optional_config(explicit_path, joint_config, basename=None):
             raise ValueError(f'Expected a configuration file: {path}')
         return str(path)
     if basename:
-        path = Path(joint_config).parent / f'{basename}.yaml'
+        path = configuration_path(Path(joint_limits).parent, basename)
         if path.exists():
             if not path.is_file():
                 raise ValueError(f'Expected a configuration file: {path}')
@@ -78,24 +90,28 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
     uses_trajectory = config_name == 'trajectory_config'
 
     def launch_controller(context):
-        joint_config, id_map = resolve_paths(
-            LaunchConfiguration('joint_config').perform(context),
+        joint_limits, id_map = resolve_paths(
+            LaunchConfiguration('joint_limits').perform(context),
             LaunchConfiguration('robot_id_map').perform(context),
             os.environ.get('EC_CFG', ''),
             os.environ.get('ROS2_CFG', ''),
-            'joint_config',
+            'joint_limits',
         )
-        shared_files = [joint_config]
+        from .panel_config import load_parameters
+        with open(joint_limits) as stream:
+            is_moveit = 'joint_limits' in (yaml.safe_load(stream) or {})
+        shared_files = [load_parameters(joint_limits, LaunchConfiguration('namespace').perform(context))
+                        if is_moveit else joint_limits]
         if uses_trajectory:
             trajectory_config = optional_config(
                 LaunchConfiguration('trajectory_config').perform(context),
-                joint_config, 'trajectory_config',
+                joint_limits, 'trajectory_config',
             )
             if trajectory_config:
                 shared_files.append(trajectory_config)
 
         from .motor_profiles import profile_parameters
-        profile = profile_parameters(joint_config,
+        profile = profile_parameters(joint_limits,
             LaunchConfiguration('namespace').perform(context),
             LaunchConfiguration('control_mode').perform(context),
             LaunchConfiguration('motor_profiles_dir').perform(context),
@@ -106,10 +122,10 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
         if profile:
             shared_files.append({'joint_gains': profile['joint_gains']})
             from launch.logging import get_logger
-            get_logger('motor_profiles').info(f"Motor profile: {profile['path']} (joints from {joint_config})")
+            get_logger('motor_profiles').info(f"Motor profile: {profile['path']} (joints from {joint_limits})")
 
         node_config = optional_config(
-            LaunchConfiguration('node_config').perform(context), joint_config,
+            LaunchConfiguration('node_config').perform(context), joint_limits,
         )
         parameters = shared_files + ([node_config] if node_config else [])
         parameters.append({'robot_id_map': id_map})
@@ -152,8 +168,8 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
 
     arguments = [
         DeclareLaunchArgument(
-            'joint_config', default_value='',
-            description='Shared joint parameters; defaults to ROS2_CFG or EC_CFG robot_ros2_folder/config',
+            'joint_limits', default_value='',
+            description='Shared joint parameters; defaults to ROS2_CFG or EC_CFG robot_ros2_folder/config/controller',
         ),
         DeclareLaunchArgument(
             'node_config', default_value='',
@@ -173,7 +189,7 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
     if uses_trajectory:
         arguments.append(DeclareLaunchArgument(
             'trajectory_config', default_value='',
-            description='Optional trajectory overrides; defaults beside joint_config.yaml',
+            description='Optional trajectory overrides; defaults beside joint_limits.yaml',
         ))
     if motor_power:
         arguments.extend([

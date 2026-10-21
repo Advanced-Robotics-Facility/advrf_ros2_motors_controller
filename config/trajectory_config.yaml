@@ -1,4 +1,4 @@
-# Overrides applied after joint_config.yaml.
+# Overrides applied after joint_limits.yaml.
 /**:
   ros__parameters:
     update_rate: 250.0
