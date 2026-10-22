@@ -92,6 +92,17 @@ class ActionTest(unittest.TestCase):
                 g.trajectory.points = [p]
                 return g
 
+            def partial_goal(target, duration=1):
+                g = FollowJointTrajectory.Goal()
+                g.trajectory.joint_names = ['a']
+                p = JointTrajectoryPoint()
+                p.positions = [target]
+                p.velocities = [0.0]
+                p.accelerations = [0.0]
+                p.time_from_start.sec = duration
+                g.trajectory.points = [p]
+                return g
+
             try:
                 self.assertTrue(client.wait_for_server(timeout_sec=10))
                 spin(0.3)
@@ -103,6 +114,16 @@ class ActionTest(unittest.TestCase):
                 self.assertTrue(feedback)
                 self.assertTrue(any(abs(p.pos_ref - 0.2) < 0.005 for m in received for p in m.data if p.ecat_id == 2))
                 self.assertTrue(any(0 < p.pos_ref < 0.19 for m in received for p in m.data if p.ecat_id == 2))
+                count = len(received)
+                handle = wait(client.send_goal_async(partial_goal(0.15)))
+                self.assertTrue(handle.accepted)
+                result = wait(handle.get_result_async())
+                self.assertEqual(result.status, GoalStatus.STATUS_SUCCEEDED)
+                partial_commands = received[count:]
+                self.assertTrue(any(abs(p.pos_ref - 0.15) < 0.005
+                                    for m in partial_commands for p in m.data if p.ecat_id == 7))
+                self.assertTrue(all(abs(p.pos_ref - 0.2) < 0.005
+                                    for m in partial_commands for p in m.data if p.ecat_id == 2))
                 self.assertTrue(mode.wait_for_service(timeout_sec=3))
                 endpoints = node.get_publishers_info_by_topic('tx/motors')
                 self.assertEqual([endpoint.node_name for endpoint in endpoints],

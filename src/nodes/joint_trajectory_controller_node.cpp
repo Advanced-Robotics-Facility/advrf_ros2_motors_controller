@@ -192,11 +192,6 @@ private:
 
     const auto &t = goal.trajectory;
     validate_trajectory(t);
-    if (t.joint_names.size() != config_.joints.size())
-    {
-      throw std::invalid_argument("Full joint goals required");
-    }
-
     const auto indices = config_.joint_indices(t.joint_names);
 
     const rclcpp::Time stamp(t.header.stamp, get_clock()->get_clock_type());
@@ -357,12 +352,12 @@ private:
           auto initial = measured_in_goal_order();
           if (!trajectory_.points.front().velocities.empty())
           {
-            initial.velocities.assign(config_.joints.size(), 0);
+            initial.velocities.assign(goal_indices_.size(), 0);
           }
 
           if (!trajectory_.points.front().accelerations.empty())
           {
-            initial.accelerations.assign(config_.joints.size(), 0);
+            initial.accelerations.assign(goal_indices_.size(), 0);
           }
 
           trajectory_.points.insert(trajectory_.points.begin(), initial);
@@ -383,7 +378,7 @@ private:
       feedback->desired = desired;
       feedback->actual = measured;
       feedback->actual.time_from_start = desired.time_from_start;
-      for (size_t j = 0; j < config_.joints.size(); ++j)
+      for (size_t j = 0; j < goal_indices_.size(); ++j)
       {
         const double error = desired.positions[j] - measured.positions[j];
         feedback->error.positions.push_back(error);
@@ -406,7 +401,7 @@ private:
       // Maintain last emitted reference in canonical joint order.
       hold_.positions.resize(config_.joints.size());
       hold_.velocities.assign(config_.joints.size(), 0);
-      for (size_t j = 0; j < config_.joints.size(); ++j)
+      for (size_t j = 0; j < goal_indices_.size(); ++j)
       {
         hold_.positions[goal_indices_[j]] = desired.positions[j];
       }

@@ -105,6 +105,12 @@ GoTo produces trajectories for the trajectory controller, which samples and publ
 not motor IDs or gains. Trajectory overshoot and acceleration checks remain in the
 generator. Commands use volatile durability by default.
 
+The trajectory action accepts any nonempty, unique subset of the configured
+joints. This allows one action server to execute MoveIt arm-only and
+gripper-only trajectories. Joints omitted from a goal retain their measured or
+last commanded position when the controller returns to its hold state. Only one
+trajectory goal can execute at a time.
+
 Upstream producers must coordinate: external clients must stop trajectory generation
 before direct publication, and stop direct publication before resuming trajectories.
 The panel handles this coordination for its own commands. The converter accepts valid
