@@ -82,7 +82,9 @@ def make_trajectory(names, actual, joint, targets, rate):
 
 class TrajectoryTest(Node):
     def __init__(self, args):
-        super().__init__('test_joint_trajectory', namespace=args.namespace)
+        from .launch_config import resolve_namespace
+        namespace = resolve_namespace(args.namespace, os.environ.get('EC_CFG', ''))
+        super().__init__('test_joint_trajectory', namespace=namespace)
 
         config = resolve_panel_config(
             args.joint_limits,
@@ -250,7 +252,7 @@ def parse_arguments():
         help='Number of min -> max -> min cycles; 0 means infinite',
     )
     parser.add_argument('--joint-limits', default='')
-    parser.add_argument('--namespace', default='')
+    parser.add_argument('--namespace', default=None)
     parser.add_argument('--action', default='advrf_motors_controller/follow_joint_trajectory')
     parser.add_argument('--timeout', type=float, default=5.0)
 

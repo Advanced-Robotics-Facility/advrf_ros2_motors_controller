@@ -89,7 +89,7 @@ class GoToTest(unittest.TestCase):
                 return request
 
             try:
-                for executable in sys.argv[1:3]:
+                for executable in sys.argv[1:4]:
                     log = open(root / (Path(executable).name + '.log'), 'w+')
                     logs.append(log)
                     processes.append(subprocess.Popen(

@@ -20,7 +20,7 @@ class JointTrajectoryController : public rclcpp::Node
 public:
   JointTrajectoryController() : Node("joint_trajectory_controller_node")
   {
-    config_ = ControllerConfig::declare(*this);
+    config_ = ControllerConfig::declare(*this, false);
     enabled_ = declare_parameter("command_enabled", true);
     enable_service_ = create_service<std_srvs::srv::SetBool>(
         "set_trajectory_enabled",
@@ -53,8 +53,8 @@ public:
       throw std::invalid_argument("Invalid rate, timeout or tolerance");
     }
 
-    auto qos = declare_command_qos(*this);
-    publisher_ = create_publisher<advrf_interfaces::msg::MotorTxPdoVector>("tx/motors", qos);
+    publisher_ = create_publisher<sensor_msgs::msg::JointState>(
+        "joint_commands", rclcpp::QoS(1).reliable().durability_volatile());
     subscription_ = create_subscription<sensor_msgs::msg::JointState>(
         "rx/joint_states", rclcpp::SensorDataQoS(),
         [this](sensor_msgs::msg::JointState::ConstSharedPtr msg)
@@ -294,6 +294,16 @@ private:
     active_.reset();
   }
 
+  void publish_reference(const std::vector<std::string> &names, const Point &point)
+  {
+    sensor_msgs::msg::JointState message;
+    message.header.stamp = now();
+    message.name = names;
+    message.position = point.positions;
+    message.velocity = point.velocities;
+    publisher_->publish(message);
+  }
+
   void cycle()
   {
     if (!enabled_)
@@ -307,8 +317,7 @@ private:
         if (holding_ && fresh())
         {
           config_.check_indexed(hold_, canonical_indices_);
-          publisher_->publish(middleware_msgs::from_trajectory_point(
-              config_.joints, hold_, config_.motors, config_.gains));
+          publish_reference(config_.joints, hold_);
         }
 
         return;
@@ -392,8 +401,7 @@ private:
       }
 
       feedback->error.time_from_start = desired.time_from_start;
-      publisher_->publish(middleware_msgs::from_trajectory_point(trajectory_.joint_names, desired,
-                                                                 config_.motors, config_.gains));
+      publish_reference(trajectory_.joint_names, desired);
 
       // Maintain last emitted reference in canonical joint order.
       hold_.positions.resize(config_.joints.size());
@@ -453,7 +461,7 @@ private:
   rclcpp::Time last_clock_{0, 0, RCL_ROS_TIME};
   trajectory_msgs::msg::JointTrajectory trajectory_;
   std::shared_ptr<Handle> active_;
-  rclcpp::Publisher<advrf_interfaces::msg::MotorTxPdoVector>::SharedPtr publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr publisher_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr subscription_;
   rclcpp_action::Server<Action>::SharedPtr server_;
   rclcpp::TimerBase::SharedPtr timer_;

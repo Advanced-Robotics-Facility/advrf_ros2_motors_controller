@@ -56,8 +56,10 @@ class MotorPanel(Plugin):
         self.dispatch.state.connect(self.receive)
         parser = argparse.ArgumentParser()
         parser.add_argument('--joint-limits', default='')
-        parser.add_argument('--namespace', default='')
+        parser.add_argument('--namespace', default=None)
         args = parser.parse_args(context.argv())
+        from .launch_config import resolve_namespace
+        args.namespace = resolve_namespace(args.namespace, os.environ.get('EC_CFG', ''))
         self.widget = QWidget()
         self.widget.setObjectName('AdvrfMotorPanel')
         self.widget.setWindowTitle('ADVRF · Joint control')
@@ -227,7 +229,7 @@ class MotorPanel(Plugin):
                         for name in ('start_motors', 'stop_motors')]
         self.command_publisher = self.node.create_publisher(JointState, self.endpoint('joint_commands'), 1)
         self.mode_clients = [self.node.create_client(SetBool, self.endpoint(name))
-                             for name in ('set_trajectory_enabled', 'set_direct_enabled')]
+                             for name in ('set_trajectory_enabled',)]
         self.note(f'Connected to {self.endpoint("")} ; waiting for feedback. Motors are never started automatically.')
         self.refresh()
 
@@ -271,15 +273,12 @@ class MotorPanel(Plugin):
     def mode_services_available(self):
         if not self.mode_clients:
             return False
-        target = self.mode.currentIndex()
-        if not self.mode_clients[target].service_is_ready():
+        if not self.command_publisher.get_subscription_count():
             return False
-        if self.mode_clients[1 - target].service_is_ready():
+        if self.mode_clients[0].service_is_ready():
             return True
-        # A GoTo-only setup has no direct controller to disable. If a direct
-        # subscriber exists without its gate service, keep movement blocked.
-        if target == 0:
-            return not self.command_publisher.get_subscription_count()
+        if self.mode.currentIndex() == 0:
+            return False
         from rclpy.action import get_action_server_names_and_types_by_node
         prefix = self.endpoint('') + '/'
         return not any(name.startswith(prefix) and any(kind in (
@@ -296,28 +295,21 @@ class MotorPanel(Plugin):
         self.mode_ready = False
         self.mode_attempted = True
         if not self.mode_services_available():
-            self.note('Mode services unavailable. Start the robot bringup; this panel only connects to running nodes.')
+            self.note('Joint converter or trajectory mode service unavailable. Start the required backends.')
             self.refresh()
             return
         self.mode_pending = True
-        target = self.mode.currentIndex()  # 0: trajectory, 1: direct
-        if self.mode_clients[1 - target].service_is_ready():
-            self.note('Switching command mode: disabling the other controller first…')
-            self.later(self.mode_clients[1 - target].call_async(SetBool.Request(data=False)),
-                       lambda response: self.other_disabled(response, target))
-        else:
-            self.note('Single-controller setup: enabling the selected controller…')
-            self.later(self.mode_clients[target].call_async(SetBool.Request(data=True)),
+        trajectory_mode = self.mode.currentIndex() == 0
+        if self.mode_clients[0].service_is_ready():
+            self.note('Enabling trajectory generation…' if trajectory_mode else
+                      'Disabling trajectory generation before direct commands…')
+            self.later(self.mode_clients[0].call_async(SetBool.Request(data=trajectory_mode)),
                        self.mode_enabled)
+        else:
+            from types import SimpleNamespace
+            self.mode_enabled(SimpleNamespace(success=True,
+                message='Direct mode ready; no trajectory server connected.'))
         self.refresh()
-
-    def other_disabled(self, response, target):
-        if not response.success:
-            self.mode_pending = False
-            self.note('Mode switch rejected: ' + response.message)
-            return
-        self.later(self.mode_clients[target].call_async(SetBool.Request(data=True)),
-                   self.mode_enabled)
 
     def mode_enabled(self, response):
         self.mode_pending = False
@@ -379,6 +371,8 @@ class MotorPanel(Plugin):
             self.note('Continuous commands stopped: feedback missing, stale or outside limits. Restart explicitly.')
         idle = not self.busy and not self.power_busy and not self.stopping and not self.mode_pending
         available = self.mode_services_available()
+        if not available:
+            self.mode_ready = False
         if connected and idle and not self.streaming and available and not self.mode_attempted:
             self.apply_mode()
             return

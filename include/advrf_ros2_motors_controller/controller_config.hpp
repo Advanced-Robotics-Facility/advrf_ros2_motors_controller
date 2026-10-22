@@ -19,7 +19,8 @@ struct ControllerConfig
   std::vector<double> acceleration;
   std::array<float, 5> gains{};
 
-  static ControllerConfig declare(rclcpp::Node &node);
+  // Generators need joint limits only; the output node also loads hardware mapping/gains.
+  static ControllerConfig declare(rclcpp::Node &node, bool with_motors = true);
 
   size_t index(const std::string &name) const;
 
@@ -28,7 +29,7 @@ struct ControllerConfig
 
   // Indices must come from joint_indices() for this configuration.
   void check_indexed(const trajectory_msgs::msg::JointTrajectoryPoint &point,
-                     const std::vector<size_t> &indices) const;
+                     const std::vector<size_t> &indices, bool require_positions = true) const;
 
   void check(const trajectory_msgs::msg::JointTrajectoryPoint &point,
              const std::vector<std::string> &names) const;

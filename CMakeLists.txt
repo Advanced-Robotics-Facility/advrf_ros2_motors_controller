@@ -73,7 +73,7 @@ if(BUILD_TESTING)
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO)
   ament_add_test(test_trajectory_generator
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_trajectory_generator.py"
-      "$<TARGET_FILE:joint_trajectory_controller_node>" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_joint_trajectory"
+      "$<TARGET_FILE:joint_trajectory_controller_node>" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_joint_trajectory" "$<TARGET_FILE:joint_command_controller_node>"
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO
     TIMEOUT 30)
   ament_add_test(test_motor_profiles
@@ -92,7 +92,7 @@ if(BUILD_TESTING)
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO
     TIMEOUT 30)
   ament_add_test(test_action
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_action.py" "$<TARGET_FILE:joint_trajectory_controller_node>"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_action.py" "$<TARGET_FILE:joint_trajectory_controller_node>" "$<TARGET_FILE:joint_command_controller_node>"
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO
     TIMEOUT 40)
   ament_add_test(test_joint_command
@@ -104,7 +104,7 @@ if(BUILD_TESTING)
   ament_target_dependencies(test_motion_math trajectory_msgs rclcpp sensor_msgs advrf_interfaces)
   ament_add_test(test_go_to
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_go_to.py"
-      "$<TARGET_FILE:joint_go_to_node>" "$<TARGET_FILE:joint_trajectory_controller_node>"
+      "$<TARGET_FILE:joint_go_to_node>" "$<TARGET_FILE:joint_trajectory_controller_node>" "$<TARGET_FILE:joint_command_controller_node>"
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO
     TIMEOUT 45)
   ament_add_gtest(test_interpolator test/test_interpolator.cpp)

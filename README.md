@@ -19,24 +19,24 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 `EC_CFG` provides the joint configuration, motor ID map and motor-profile folder.
 Profiles are selected by their `control_mode`, independently of filenames.
-Controller files are read from `ros2/config/controller/` (the older `ros2/config/`
-layout is also supported). Use the same ROS domain as the middleware.
+Controller files are read from `ros2/config/`; the older `config/controller/`
+layout is also supported. Use the same ROS domain as the middleware.
 
 Without `EC_CFG`, pass `joint_limits`, `robot_id_map` and, when needed,
 `motor_profiles_dir` explicitly to the controller launch.
 
 ## Launch
 
-Start the master and middleware separately. Choose one motion controller:
+Start the master and middleware separately. Each motion launcher starts the joint-to-motor output it needs:
 
 ```bash
-# Go to joint positions; includes the trajectory controller.
+# Go to joint positions; includes trajectory generation and joint output.
 ros2 launch advrf_ros2_motors_controller go_to.launch.py namespace:=/robot
 
-# Execute trajectories from a client or MoveIt.
+# Execute trajectories; includes the shared joint output.
 ros2 launch advrf_ros2_motors_controller trajectory.launch.py namespace:=/robot
 
-# Receive direct joint position commands.
+# Direct joint position and/or velocity commands.
 ros2 launch advrf_ros2_motors_controller joint.launch.py namespace:=/robot
 ```
 
@@ -56,8 +56,8 @@ ros2 launch advrf_ros2_motors_controller debug.launch.py namespace:=/advrf/bench
 ```
 
 Starts the panel, motor START/STOP services, GoTo, trajectory and direct joint
-controllers in one namespace. Both motion controllers start disabled; the panel
-activates the selected mode. Motors start only when START is requested in the panel.
+controllers in one namespace. Trajectory generation starts disabled; the panel enables it for GoTo or keeps
+it disabled while publishing continuous commands. Motors start only when START is requested in the panel.
 Configuration comes from `EC_CFG` / `ROS2_CFG`, with optional `joint_limits`,
 `robot_id_map`, `trajectory_config`, `control_mode`, `motor_profile`,
 `motor_profiles_dir` and `start_gains` launch arguments.
@@ -77,10 +77,38 @@ The panel connects to running nodes; it does not start controllers.
 - **Go to targets**: move the checked joints.
 - **Continuous joint commands**: stream selected joint targets at 20 Hz.
 
-For GoTo/direct switching, the robot bringup must start both controllers with
-`command_enabled:=false` for the direct controller. The panel disables the other
-controller before enabling the selected one. Do not run both standalone motion
-launches with their default enabled settings.
+For GoTo/direct switching, use `debug.launch.py` or `go_to.launch.py` with the
+panel. They start one joint output, shared by trajectory and direct control.
+The panel disables trajectory generation before publishing continuous commands.
+It stops continuous publication before re-enabling trajectory generation for GoTo.
+`set_trajectory_enabled` gates trajectory generation and rejects changes while a
+goal is active. There is no source-selection service on the joint converter.
+
+If a joint converter is already running, pass `start_joint_controller:=false` to
+`trajectory.launch.py` or `go_to.launch.py`. Run one converter per namespace.
+
+## Command pipeline
+
+```text
+GoTo → FollowJointTrajectory → trajectory controller ─┐
+                                                    ├→ joint_commands → joint converter → tx/motors → middleware
+Panel / external JointState producer ────────────────┘
+```
+
+`joint_command_controller_node` has one public `JointState` input, `joint_commands`,
+and is the only publisher of `tx/motors`. It validates references, maps joint names
+to motor IDs and applies motor gains. It neither selects sources nor generates motion.
+Any upstream producer can feed this converter using the same message contract.
+
+GoTo produces trajectories for the trajectory controller, which samples and publishes
+`JointState` references on `joint_commands`. The generators require joint limits,
+not motor IDs or gains. Trajectory overshoot and acceleration checks remain in the
+generator. Commands use volatile durability by default.
+
+Upstream producers must coordinate: external clients must stop trajectory generation
+before direct publication, and stop direct publication before resuming trajectories.
+The panel handles this coordination for its own commands. The converter accepts valid
+messages from every producer and does not arbitrate between concurrent publishers.
 
 ## Interfaces
 
@@ -89,7 +117,7 @@ Names are relative to the robot namespace.
 | Interface | Purpose |
 | --- | --- |
 | `rx/joint_states` | Measured joint positions |
-| `joint_commands` | Direct commands (`JointState`) |
+| `joint_commands` | Shared joint references (`JointState`), from any upstream producer |
 | `go_to_joint_positions` | GoTo action |
 | `advrf_motors_controller/follow_joint_trajectory` | Trajectory action |
 | `start_motors`, `stop_motors` | Motor power services |
@@ -118,7 +146,7 @@ velocity/acceleration limits are rejected. Ctrl-C requests trajectory cancellati
 it does not send motor STOP. This client does not START motors or switch controllers.
 
 Joint configuration uses `joint_limits.yaml` in `ROS2_CFG` (or
-`EC_CFG` → `robot.robot_ros2_folder/config`). The explicit launch argument is
+`EC_CFG` → `ros2.folder/config`). The explicit launch argument is
 `joint_limits:=/path/to/joint_limits.yaml`; Python clients use `--joint-limits`.
 MoveIt joint-limit mappings are converted to controller arrays in URDF joint order.
 Position bounds come from `min_position`/`max_position`, falling back to the single
@@ -128,3 +156,43 @@ be supplied in the limits file. All joints listed in that file are included.
 ROS parameter YAML with the existing arrays is also supported.
 `trajectory_config.yaml` is discovered in `ros2/config`, including when the config
 path points to `config/controller`. Explicit trajectory overrides remain supported.
+
+## Robot defaults and overrides
+
+The EC configuration supplies ROS 2 defaults alongside hardware paths:
+
+```yaml
+robot:
+  robot_id_map_path: '${PWD}/robot_id_map/robot_id_map.yaml'
+  robot_control_path: '${PWD}/robot_control/bench_control.yaml'
+ros2:
+  namespace: /advrf/bench
+  folder: '${PWD}/ros2/'
+```
+
+`${PWD}` is resolved against the EC configuration file's directory.
+All motor-controller launches accept `ec_cfg` (default `$EC_CFG`), `ros2_cfg`
+(default `$ROS2_CFG`) and `namespace` (default `ros2.namespace` in that EC file).
+Explicit `namespace:=/` selects the root namespace. Explicit file paths override
+configuration discovery; `ros2_cfg` overrides the EC file's `ros2.folder/config`.
+The legacy `robot.robot_ros2_folder` remains supported when `ros2.folder` is absent.
+
+```bash
+# With EC_CFG already selected, namespace is automatic.
+ros2 launch advrf_ros2_motors_controller debug.launch.py
+# No export required; all included backends and the panel share this selection.
+ros2 launch advrf_ros2_motors_controller debug.launch.py ec_cfg:=/path/to/ec_cfg.yaml
+# Override the robot's default namespace for this invocation.
+ros2 launch advrf_ros2_motors_controller joint.launch.py namespace:=/advrf/test
+```
+
+The workspace helper `./launch_debug.sh` sources the installed workspace and
+forwards the same arguments, e.g. `./launch_debug.sh ec_cfg:=/path/to/ec_cfg.yaml`.
+
+Direct `joint_commands` messages accept positions, velocities, or both, with one
+value per named joint in each supplied array. Empty commands, mismatched sizes,
+unknown/duplicate joints, effort and nonfinite/out-of-range references are rejected.
+Velocity-only commands are forwarded as `vel_ref` with `pos_ref=0` in the fixed
+motor PDO layout. Start the motor in velocity mode with its matching profile;
+these messages do not change the motor's control mode. Trajectories still require
+positions. The direct controller does not send a zero velocity on command timeout.

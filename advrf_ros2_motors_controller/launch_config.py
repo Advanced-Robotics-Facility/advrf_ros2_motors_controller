@@ -1,13 +1,13 @@
 """Resolve robot configuration paths from EC_CFG at launch time."""
 
-import os
 import math
 from pathlib import Path
 
 import yaml
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, EnvironmentVariable
+from launch.substitution import Substitution
 from launch.conditions import IfCondition
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.actions import Node
@@ -26,6 +26,64 @@ def robot_reference(ec_config, key):
     reference = reference.replace('$PWD', str(ec_config.parent))
     path = Path(reference)
     return path if path.is_absolute() else ec_config.parent / path
+
+
+def ros2_folder(ec_config):
+    """Prefer ros2.folder, while accepting the former robot key."""
+    with Path(ec_config).open() as stream:
+        document = yaml.safe_load(stream)
+    section = document.get('ros2', {}) if isinstance(document, dict) else {}
+    if 'folder' not in section:
+        return robot_reference(Path(ec_config), 'robot_ros2_folder')
+    reference = section['folder']
+    if not isinstance(reference, str) or not reference.strip():
+        raise ValueError(f'{ec_config}: ros2.folder must be a nonempty path')
+    base = Path(ec_config).expanduser().resolve().parent
+    path = Path(reference.replace('${PWD}', str(base)).replace('$PWD', str(base))).expanduser()
+    return path if path.is_absolute() else base / path
+
+
+def resolve_namespace(explicit=None, ec_cfg=''):
+    """An explicit namespace (including /) overrides the robot default."""
+    if explicit is not None:
+        return explicit
+    if not ec_cfg:
+        return ''
+    with Path(ec_cfg).expanduser().open() as stream:
+        document = yaml.safe_load(stream)
+    section = document.get('ros2', {}) if isinstance(document, dict) else {}
+    namespace = section.get('namespace', '')
+    if not isinstance(namespace, str):
+        raise ValueError(f'{ec_cfg}: ros2.namespace must be a string')
+    namespace = namespace.strip()
+    if not namespace:
+        return ''
+    from rclpy.validate_namespace import validate_namespace
+    namespace = '/' + namespace.strip('/')
+    validate_namespace(namespace)
+    return namespace
+
+
+def config_argument(context, name):
+    return LaunchConfiguration(name, default=EnvironmentVariable(name.upper(), default_value='')).perform(context)
+
+
+def config_arguments():
+    return [DeclareLaunchArgument(name, default_value=EnvironmentVariable(name.upper(), default_value=''))
+            for name in ('ec_cfg', 'ros2_cfg')]
+
+
+class RobotNamespace(Substitution):
+    """Resolve the default at launch execution, after ec_cfg overrides."""
+    def __init__(self, fallback=''):
+        super().__init__()
+        self.fallback = fallback
+
+    def perform(self, context):
+        return resolve_namespace(ec_cfg=config_argument(context, 'ec_cfg')) or self.fallback
+
+    def describe(self):
+        return 'namespace from EC_CFG ros2.namespace'
 
 
 def configuration_path(directory, config_name):
@@ -51,7 +109,7 @@ def resolve_paths(config_file, robot_id_map, ec_cfg, ros2_cfg, config_name):
         if ros2_cfg:
             directory = Path(ros2_cfg).expanduser()
         elif ec_config:
-            directory = robot_reference(ec_config, 'robot_ros2_folder') / 'config'
+            directory = ros2_folder(ec_config) / 'config'
         else:
             raise ValueError('Set EC_CFG or ROS2_CFG, or pass an explicit configuration file')
         config_file = configuration_path(directory, config_name)
@@ -93,8 +151,8 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
         joint_limits, id_map = resolve_paths(
             LaunchConfiguration('joint_limits').perform(context),
             LaunchConfiguration('robot_id_map').perform(context),
-            os.environ.get('EC_CFG', ''),
-            os.environ.get('ROS2_CFG', ''),
+            config_argument(context, 'ec_cfg'),
+            config_argument(context, 'ros2_cfg'),
             'joint_limits',
         )
         from .panel_config import load_parameters
@@ -116,9 +174,10 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
             LaunchConfiguration('control_mode').perform(context),
             LaunchConfiguration('motor_profiles_dir').perform(context),
             LaunchConfiguration('motor_profile').perform(context),
-            os.environ.get('EC_CFG', ''))
-        shared_files.append({'command_enabled': ParameterValue(
-            LaunchConfiguration('command_enabled'), value_type=bool)})
+            config_argument(context, 'ec_cfg'))
+        if uses_trajectory:
+            shared_files.append({'command_enabled': ParameterValue(
+                LaunchConfiguration('command_enabled'), value_type=bool)})
         if profile:
             shared_files.append({'joint_gains': profile['joint_gains']})
             from launch.logging import get_logger
@@ -164,12 +223,24 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
                 parameters=shared_files + [{'robot_id_map': id_map}],
                 condition=IfCondition(LaunchConfiguration('start_trajectory_controller')),
             ))
+        if uses_trajectory:
+            # The downstream converter has one input and no source-selection logic.
+            nodes.append(Node(
+                package='advrf_ros2_motors_controller',
+                executable='joint_command_controller_node',
+                namespace=LaunchConfiguration('namespace'),
+                output='screen',
+                parameters=[entry for entry in shared_files
+                            if not isinstance(entry, dict) or 'command_enabled' not in entry]
+                           + [{'robot_id_map': id_map}],
+                condition=IfCondition(LaunchConfiguration('start_joint_controller')),
+            ))
         return nodes
 
-    arguments = [
+    arguments = config_arguments() + [
         DeclareLaunchArgument(
             'joint_limits', default_value='',
-            description='Shared joint parameters; defaults to ROS2_CFG or EC_CFG robot_ros2_folder/config/controller',
+            description='Shared joint parameters; defaults to ROS2_CFG or EC_CFG ros2.folder/config',
         ),
         DeclareLaunchArgument(
             'node_config', default_value='',
@@ -179,14 +250,19 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
             'robot_id_map', default_value='',
             description='Joint map YAML; defaults to EC_CFG robot.robot_id_map_path',
         ),
-        DeclareLaunchArgument('namespace', default_value=''),
-        DeclareLaunchArgument('command_enabled', default_value='true', choices=['true', 'false']),
+        DeclareLaunchArgument('namespace', default_value=RobotNamespace()),
         DeclareLaunchArgument('motor_profile', default_value='', description='Explicit middleware motor profile YAML'),
         DeclareLaunchArgument('motor_profiles_dir', default_value='', description='Profiles directory; defaults beside EC_CFG robot_control_path'),
         DeclareLaunchArgument('control_mode', default_value='position',
             choices=['position', 'impedance', 'velocity', 'torque', 'current']),
     ]
     if uses_trajectory:
+        arguments.append(DeclareLaunchArgument('command_enabled', default_value='true',
+            choices=['true', 'false'], description='Enable trajectory generation at startup'))
+        arguments.append(DeclareLaunchArgument(
+            'start_joint_controller', default_value='true', choices=['true', 'false'],
+            description='Start the shared joint-to-motor output; false when it is already running',
+        ))
         arguments.append(DeclareLaunchArgument(
             'trajectory_config', default_value='',
             description='Optional trajectory overrides; defaults beside joint_limits.yaml',

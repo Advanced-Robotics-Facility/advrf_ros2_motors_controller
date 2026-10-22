@@ -25,10 +25,9 @@ class PanelTest(unittest.TestCase):
     def test_direct_only_mode(self):
         panel = Mock()
         panel.mode.currentIndex.return_value = 1
-        trajectory, direct = Mock(), Mock()
+        trajectory = Mock()
         trajectory.service_is_ready.return_value = False
-        direct.service_is_ready.return_value = True
-        panel.mode_clients = [trajectory, direct]
+        panel.mode_clients = [trajectory]
         panel.endpoint.return_value = '/bench'
         panel.node.get_node_names_and_namespaces.return_value = [('controller', '/bench')]
         with patch('rclpy.action.get_action_server_names_and_types_by_node', return_value=[]) as graph:
@@ -37,7 +36,7 @@ class PanelTest(unittest.TestCase):
             self.assertFalse(MotorPanel.mode_services_available(panel))
             trajectory.service_is_ready.return_value = True
             self.assertTrue(MotorPanel.mode_services_available(panel))
-            direct.service_is_ready.return_value = False
+            panel.command_publisher.get_subscription_count.return_value = 0
             self.assertFalse(MotorPanel.mode_services_available(panel))
 
     def test_panel_with_fake_endpoints(self):
@@ -49,18 +48,16 @@ class PanelTest(unittest.TestCase):
         namespace = '/panel_test'
         config = Path(__file__).resolve().parents[1] / 'config/joint_limits.yaml'
         calls, goals, commands, switches = [], [], [], []
-        mode_state = [True, False]
+        mode_state = [True]
         def mode_callback(index):
             def callback(request, response):
                 mode_state[index] = request.data
                 switches.append((index, request.data))
-                self.assertFalse(all(mode_state), 'Both command controllers enabled together')
                 response.success = True
                 response.message = 'Simulated mode configured'
                 return response
             return callback
         fake.create_service(SetBool, namespace + '/set_trajectory_enabled', mode_callback(0))
-        direct_service = fake.create_service(SetBool, namespace + '/set_direct_enabled', mode_callback(1))
         direct_subscription = fake.create_subscription(JointState, namespace + '/joint_commands', commands.append, 10)
         def power(command):
             def callback(request, response):
@@ -133,8 +130,8 @@ class PanelTest(unittest.TestCase):
             # Continuous mode only commands checked joints, with a velocity cap.
             panel.mode.setCurrentIndex(1)
             wait(lambda: panel.mode_ready and panel.stream.isEnabled())
-            self.assertEqual(mode_state, [False, True])
-            self.assertEqual(switches[-2:], [(0, False), (1, True)])
+            self.assertEqual(mode_state, [False])
+            self.assertEqual(switches[-1:], [(0, False)])
             for check in panel.checks[1:]:
                 check.setChecked(False)
             panel.rows[0][1].setValue(0.8)
@@ -153,10 +150,10 @@ class PanelTest(unittest.TestCase):
             panel.stream.click()
             self.assertFalse(panel.streaming)
             self.assertEqual(calls, ['start', 'stop'])  # Stopping stream does not send motor STOP.
-            # Returning to GoTo disables direct before enabling trajectory.
+            # Returning to GoTo enables trajectory only after direct streaming stops.
             panel.mode.setCurrentIndex(0)
             wait(lambda: panel.mode_ready and panel.go.isEnabled())
-            self.assertEqual(switches[-2:], [(1, False), (0, True)])
+            self.assertEqual(switches[-1:], [(0, True)])
             panel.rows[0][1].setValue(0.25)
             panel.go.click()
             wait(lambda: not panel.busy)
@@ -175,13 +172,11 @@ class PanelTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 measured_positions(['a', 'a'], [0., 0.], [('a', -1, 1)])
             self.assertIn('feedback missing', panel.motion_status.text())
-            # A GoTo-only backend must not require the absent direct controller.
-            fake.destroy_service(direct_service)
+            # Reconnect the single joint-command consumer before returning to GoTo.
             fake.destroy_subscription(direct_subscription)
-            mode_state[1] = False
-            wait(lambda: not panel.mode_clients[1].service_is_ready()
-                 and panel.command_publisher.get_subscription_count() == 0)
+            wait(lambda: panel.command_publisher.get_subscription_count() == 0)
             timer = fake.create_timer(0.05, lambda: publisher.publish(message))
+            direct_subscription = fake.create_subscription(JointState, namespace + '/joint_commands', commands.append, 10)
             panel.mode.setCurrentIndex(0)
             wait(lambda: panel.mode_ready and panel.go.isEnabled())
             self.assertEqual(panel.motion_status.text(), 'GoTo: ready')

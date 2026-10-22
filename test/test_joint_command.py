@@ -10,7 +10,6 @@ import unittest
 from pathlib import Path
 import rclpy
 from sensor_msgs.msg import JointState
-from std_srvs.srv import SetBool
 from advrf_interfaces.msg import MotorTxPdoVector
 
 
@@ -35,8 +34,8 @@ class JointCommandTest(unittest.TestCase):
             rclpy.init()
             node = rclpy.create_node('joint_command_test')
             pub = node.create_publisher(JointState, 'joint_commands', 10)
+            other_pub = node.create_publisher(JointState, 'joint_commands', 10)
             received = []
-            mode = node.create_client(SetBool, 'set_direct_enabled')
             sub = node.create_subscription(MotorTxPdoVector, 'tx/motors', received.append, 10)
             with open(Path(tmp) / 'node.log', 'w+') as log:
                 process = subprocess.Popen([sys.argv[1], '--ros-args', '--params-file', str(config)], stdout=log, stderr=log)
@@ -72,24 +71,25 @@ class JointCommandTest(unittest.TestCase):
                     self.assertEqual(len(received[-1].data), 1)
                     self.assertEqual(received[-1].data[0].ecat_id, 7)
                     self.assertEqual(received[-1].data[0].vel_ref, 0.0)
-                    self.assertTrue(mode.wait_for_service(timeout_sec=3))
-                    future = mode.call_async(SetBool.Request(data=False))
-                    rclpy.spin_until_future_complete(node, future, timeout_sec=3)
-                    self.assertTrue(future.result().success)
-                    spin(0.1)
+                    send(['a'], [], [0.4])
+                    self.assertAlmostEqual(received[-1].data[0].vel_ref, 0.4)
+                    self.assertEqual(received[-1].data[0].pos_ref, 0.0)
+                    self.assertEqual(received[-1].data[0].ecat_id, 7)
+                    # A different upstream producer uses the same public input.
                     count = len(received)
-                    send(['a'], [0.4])
-                    self.assertEqual(len(received), count, 'Disabled direct controller published')
-                    future = mode.call_async(SetBool.Request(data=True))
-                    rclpy.spin_until_future_complete(node, future, timeout_sec=3)
-                    self.assertTrue(future.result().success)
-                    send(['a'], [0.4])
+                    other_pub.publish(JointState(name=['b', 'a'], position=[0.6, -0.2], velocity=[0.1, 0.0]))
+                    spin(0.12)
                     self.assertGreater(len(received), count)
+                    self.assertEqual([motor.ecat_id for motor in received[-1].data], [2, 7])
+                    self.assertAlmostEqual(received[-1].data[0].pos_ref, 0.6)
+                    self.assertEqual(received[-1].data[0].gain_4, 10.0)
+                    self.assertEqual(node.count_publishers('tx/motors'), 1)
                     count = len(received)
                     for args in [
                         ([], []), (['a'], []), (['a', 'a'], [0.0, 0.0]),
                         (['a', 'imu'], [0.0, 0.0]), (['a'], [float('nan')]),
-                        (['a'], [3.0]), (['a'], [0.0], [2.0]),
+                        (['a'], [], [2.0]), (['a'], [], [float('nan')]),
+                        (['a', 'b'], [], [0.1]), (['a'], [3.0]), (['a'], [0.0], [2.0]),
                         (['a'], [0.0], [0.0, 0.0]), (['a'], [0.0], [], [1.0]),
                     ]:
                         send(*args)

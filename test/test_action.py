@@ -42,6 +42,7 @@ class ActionTest(unittest.TestCase):
             rclpy.init()
             node = rclpy.create_node('controller_test')
             process = subprocess.Popen([sys.argv[1], '--ros-args', '--params-file', str(config)], stdout=log, stderr=log)
+            output_process = subprocess.Popen([sys.argv[2], '--ros-args', '--params-file', str(config)], stdout=log, stderr=log)
             pub = node.create_publisher(JointState, 'rx/joint_states', 10)
             positions = {7: 0.0, 2: 0.0}
             received = []
@@ -103,6 +104,9 @@ class ActionTest(unittest.TestCase):
                 self.assertTrue(any(abs(p.pos_ref - 0.2) < 0.005 for m in received for p in m.data if p.ecat_id == 2))
                 self.assertTrue(any(0 < p.pos_ref < 0.19 for m in received for p in m.data if p.ecat_id == 2))
                 self.assertTrue(mode.wait_for_service(timeout_sec=3))
+                endpoints = node.get_publishers_info_by_topic('tx/motors')
+                self.assertEqual([endpoint.node_name for endpoint in endpoints],
+                                 ['joint_command_controller_node'])
                 self.assertTrue(wait(mode.call_async(SetBool.Request(data=False))).success)
                 spin(0.1)
                 count = len(received)
@@ -148,6 +152,8 @@ class ActionTest(unittest.TestCase):
                 rclpy.shutdown()
                 process.terminate()
                 process.wait(timeout=5)
+                output_process.terminate()
+                output_process.wait(timeout=5)
                 log.seek(0)
                 print(log.read())
                 log.close()

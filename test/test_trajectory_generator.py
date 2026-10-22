@@ -61,6 +61,8 @@ class GeneratorTest(unittest.TestCase):
             with open(root / 'controller.log', 'w+') as log:
                 controller = subprocess.Popen([sys.argv[1], '--ros-args', '--params-file', str(config),
                     '-r', '__ns:=/sweep_test'], stdout=log, stderr=log)
+                output_process = subprocess.Popen([sys.argv[3], '--ros-args', '--params-file', str(config),
+                    '-r', '__ns:=/sweep_test'], stdout=log, stderr=log)
                 client = None
                 base = [sys.argv[2], '--namespace', '/sweep_test', '--joint-limits', str(config),
                         '--joint', 'a', '--min', '-0.1', '--max', '0.1', '--duration', '1']
@@ -85,6 +87,8 @@ class GeneratorTest(unittest.TestCase):
                         client.wait()
                     controller.terminate()
                     controller.wait(timeout=5)
+                    output_process.terminate()
+                    output_process.wait(timeout=5)
                     executor.shutdown(timeout_sec=2)
                     thread.join(timeout=2)
                     fake.destroy_node()

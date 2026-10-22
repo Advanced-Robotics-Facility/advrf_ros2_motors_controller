@@ -20,7 +20,7 @@ class JointGoTo : public rclcpp::Node
 public:
   JointGoTo() : Node("joint_go_to_node")
   {
-    config_ = ControllerConfig::declare(*this);
+    config_ = ControllerConfig::declare(*this, false);
     feedback_timeout_ = declare_parameter("feedback_timeout", 0.2);
     response_timeout_ = declare_parameter("response_timeout", 5.0);
     goal_time_tolerance_ = declare_parameter("goal_time_tolerance", 2.0);

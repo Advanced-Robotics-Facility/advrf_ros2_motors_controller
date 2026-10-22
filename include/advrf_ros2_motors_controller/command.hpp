@@ -6,6 +6,7 @@
 #include <advrf_interfaces/msg/motor_tx_pdo_vector.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <array>
+#include <vector>
 #include <set>
 #include <cmath>
 #include <limits>
@@ -70,12 +71,15 @@ from_joint_state(const sensor_msgs::msg::JointState &message, const MotorsDefini
 {
   const std::set<std::string> names(message.name.begin(), message.name.end());
   if (message.name.empty() || names.count("") || names.size() != message.name.size() ||
-      !message.effort.empty())
+      !message.effort.empty() || (message.position.empty() && message.velocity.empty()))
   {
     throw std::invalid_argument("Expected unique joint names and no effort");
   }
 
-  return detail::from_joint_values(message.name, message.position, message.velocity, motors, gains);
+  // The fixed PDO layout always carries pos_ref; velocity-only commands use zero.
+  const auto positions = message.position.empty()
+      ? std::vector<double>(message.name.size(), 0.0) : message.position;
+  return detail::from_joint_values(message.name, positions, message.velocity, motors, gains);
 }
 
 // Sample a previously validated trajectory, then convert its reference to motor commands.

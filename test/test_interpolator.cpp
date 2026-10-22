@@ -129,6 +129,26 @@ TEST(JointCommands, ConversionAndSharedLimits)
   EXPECT_THROW(joint_command(msg), std::invalid_argument);
 }
 
+TEST(JointCommands, VelocityOnlyLimitsDoNotRelaxTrajectoryValidation)
+{
+  sensor_msgs::msg::JointState message;
+  message.name = {"a"};
+  message.velocity = {0.5};
+  auto point = joint_command(message);
+  ControllerConfig config;
+  config.joints = {"a"};
+  config.lower = {1}; // An absent position is not checked as an artificial zero.
+  config.upper = {2};
+  config.velocity = {1};
+  config.acceleration = {5};
+  EXPECT_NO_THROW(config.check_indexed(point, {0}, false));
+  EXPECT_THROW(config.check(point, message.name), std::invalid_argument);
+  point.velocities = {2};
+  EXPECT_THROW(config.check_indexed(point, {0}, false), std::invalid_argument);
+  message.velocity.clear();
+  EXPECT_THROW(joint_command(message), std::invalid_argument);
+}
+
 TEST(Motors, JointStateMiddlewareConversion)
 {
   MotorsDefinition motors;
@@ -147,6 +167,11 @@ TEST(Motors, JointStateMiddlewareConversion)
   EXPECT_FLOAT_EQ(output.data[1].vel_ref, -1.0f);
   EXPECT_FLOAT_EQ(output.data[1].gain_4, 5.0f);
 
+  message.position.clear();
+  const auto velocity_only = middleware_msgs::from_joint_state(message, motors);
+  EXPECT_FLOAT_EQ(velocity_only.data[0].pos_ref, 0.0f);
+  EXPECT_FLOAT_EQ(velocity_only.data[0].vel_ref, 0.75f);
+  message.position = {0.25, -0.5};
   message.velocity.clear();
   EXPECT_FLOAT_EQ(middleware_msgs::from_joint_state(message, motors).data[0].vel_ref, 0.0f);
 

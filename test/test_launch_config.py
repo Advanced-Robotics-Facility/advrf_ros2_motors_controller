@@ -16,6 +16,40 @@ from advrf_ros2_motors_controller.launch_config import resolve_paths
 
 
 class LaunchConfigTest(unittest.TestCase):
+    def test_ros2_section_and_launch_overrides(self):
+        from advrf_ros2_motors_controller.launch_config import RobotNamespace, config_arguments
+        from advrf_ros2_motors_controller.panel_config import resolve_panel_config
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = root / 'ros2/config'
+            config.mkdir(parents=True)
+            limits = config / 'joint_limits.yaml'
+            limits.write_text('/**: {ros__parameters: {joints: [a]}}')
+            mapping = root / 'map.yaml'
+            mapping.write_text('joint_map: {1: a}')
+            ec = root / 'ec.yaml'
+            for reference in ('${PWD}/ros2', '$PWD/ros2', 'ros2', str(root / 'ros2')):
+                ec.write_text('robot: {robot_id_map_path: "${PWD}/map.yaml"}\n'
+                              f'ros2: {{folder: "{reference}", namespace: /advrf/bench}}\n')
+                self.assertEqual(resolve_paths('', '', str(ec), '', 'joint_limits'),
+                                 (str(limits), str(mapping)))
+                self.assertEqual(resolve_panel_config('', str(ec)), str(limits))
+            with patch.dict('os.environ', {'EC_CFG': '/missing/env.yaml'}):
+                context = LaunchContext()
+                context.launch_configurations['ec_cfg'] = str(ec)
+                for action in config_arguments():
+                    action.execute(context)
+                namespace = DeclareLaunchArgument('namespace', default_value=RobotNamespace())
+                namespace.execute(context)
+                self.assertEqual(context.launch_configurations['namespace'], '/advrf/bench')
+                for override in ('/custom', '/'):
+                    context.launch_configurations['namespace'] = override
+                    namespace.execute(context)
+                    self.assertEqual(context.launch_configurations['namespace'], override)
+            # A full explicit invocation can ignore an unavailable EC_CFG.
+            self.assertEqual(resolve_paths(str(limits), str(mapping), '/missing', '', 'joint_limits'),
+                             (str(limits), str(mapping)))
+
     def test_controller_subdirectory(self):
         from advrf_ros2_motors_controller.panel_config import resolve_panel_config
         with tempfile.TemporaryDirectory() as temporary:
@@ -77,7 +111,7 @@ class LaunchConfigTest(unittest.TestCase):
                 self.assertIsInstance(actions[0], ExecuteProcess)
                 description = module.generate_launch_description()
                 args = [e.name for e in description.entities if isinstance(e, DeclareLaunchArgument)]
-                self.assertEqual(args, ['joint_limits', 'namespace'])
+                self.assertEqual(args, ['ec_cfg', 'ros2_cfg', 'joint_limits', 'namespace'])
 
     def test_references_and_overrides(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -151,7 +185,12 @@ class LaunchConfigTest(unittest.TestCase):
                     callback = next(entity for entity in description.entities
                                     if isinstance(entity, OpaqueFunction))
                     nodes = callback.execute(context)
-                    self.assertEqual(len(nodes), 2)
+                    self.assertEqual(len(nodes), 3)
+                    self.assertEqual(nodes[2].node_executable,
+                                     'joint_command_controller_node')
+                    self.assertTrue(nodes[2].condition.evaluate(context))
+                    context.launch_configurations['start_joint_controller'] = 'false'
+                    self.assertFalse(nodes[2].condition.evaluate(context))
                     self.assertEqual(nodes[1].condition.evaluate(context), start == 'true')
                     for node in nodes:
                         params = evaluate_parameters(context, node._Node__parameters)

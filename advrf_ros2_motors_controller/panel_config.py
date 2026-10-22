@@ -88,14 +88,14 @@ def measured_positions(names, positions, joints):
 
 def resolve_panel_config(explicit='', ec_cfg='', ros2_cfg=''):
     """A panel needs only joint configuration, not the hardware ID map."""
-    from .launch_config import robot_reference, configuration_path
+    from .launch_config import ros2_folder, configuration_path
     if explicit:
         path = Path(explicit).expanduser()
     elif ros2_cfg:
         path = configuration_path(ros2_cfg, 'joint_limits')
     elif ec_cfg:
         ec_path = Path(ec_cfg).expanduser().resolve(strict=True)
-        path = configuration_path(robot_reference(ec_path, 'robot_ros2_folder') / 'config', 'joint_limits')
+        path = configuration_path(ros2_folder(ec_path) / 'config', 'joint_limits')
     else:
         raise ValueError('Choose joint_limits.yaml or set EC_CFG / ROS2_CFG')
     path = path.resolve(strict=True)

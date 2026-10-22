@@ -2,23 +2,27 @@
 
 namespace advrf_ros2_motors_controller
 {
-ControllerConfig ControllerConfig::declare(rclcpp::Node &node)
+ControllerConfig ControllerConfig::declare(rclcpp::Node &node, bool with_motors)
 {
   ControllerConfig config;
   config.joints =
       node.declare_parameter<std::vector<std::string>>("joints", std::vector<std::string>{});
-  auto id_map = node.declare_parameter<std::string>("robot_id_map", "");
-  // Keep the former parameter working for existing direct node invocations.
-  const auto legacy_map = node.declare_parameter<std::string>("middleware_config", "");
-  if (id_map.empty())
+  config.joint_indices(config.joints);
+  if (with_motors)
   {
-    id_map = legacy_map;
+    auto id_map = node.declare_parameter<std::string>("robot_id_map", "");
+    // Keep the former parameter working for existing direct node invocations.
+    const auto legacy_map = node.declare_parameter<std::string>("middleware_config", "");
+    if (id_map.empty())
+    {
+      id_map = legacy_map;
+    }
+    if (id_map.empty())
+    {
+      throw std::invalid_argument("Provide robot_id_map pointing to robot_id_map.yaml");
+    }
+    config.motors = MotorsDefinition::load(id_map, config.joints);
   }
-  if (id_map.empty())
-  {
-    throw std::invalid_argument("Provide robot_id_map pointing to robot_id_map.yaml");
-  }
-  config.motors = MotorsDefinition::load(id_map, config.joints);
   config.lower = node.declare_parameter<std::vector<double>>("position_lower", std::vector<double>{});
   config.upper = node.declare_parameter<std::vector<double>>("position_upper", std::vector<double>{});
   config.velocity = node.declare_parameter<std::vector<double>>("max_velocity", std::vector<double>{});
@@ -41,6 +45,11 @@ ControllerConfig ControllerConfig::declare(rclcpp::Node &node)
     {
       throw std::invalid_argument("Invalid joint limits");
     }
+  }
+
+  if (!with_motors)
+  {
+    return config;
   }
 
   const auto gains = node.declare_parameter<std::vector<double>>("gains", {0., 0., 0., 0., 0.});
@@ -124,12 +133,14 @@ void ControllerConfig::check(const trajectory_msgs::msg::JointTrajectoryPoint &p
 }
 
 void ControllerConfig::check_indexed(const trajectory_msgs::msg::JointTrajectoryPoint &point,
-                                     const std::vector<size_t> &indices) const
+                                     const std::vector<size_t> &indices, bool require_positions) const
 {
   const auto count = indices.size();
+  const bool has_position = !point.positions.empty();
   const bool has_velocity = !point.velocities.empty();
   const bool has_acceleration = !point.accelerations.empty();
-  if (count == 0 || point.positions.size() != count ||
+  if (count == 0 || (require_positions && !has_position) ||
+      (!has_position && !has_velocity) || (has_position && point.positions.size() != count) ||
       (has_velocity && point.velocities.size() != count) ||
       (has_acceleration && point.accelerations.size() != count) || !point.effort.empty())
   {
@@ -144,11 +155,11 @@ void ControllerConfig::check_indexed(const trajectory_msgs::msg::JointTrajectory
       throw std::invalid_argument("Invalid command joint index");
     }
 
-    const double p = point.positions[j];
+    const double p = has_position ? point.positions[j] : 0;
     const double v = has_velocity ? point.velocities[j] : 0;
     const double a = has_acceleration ? point.accelerations[j] : 0;
-    if (!std::isfinite(p) || !std::isfinite(v) || !std::isfinite(a) || p < lower[i] ||
-        p > upper[i] || std::abs(v) > velocity[i] || std::abs(a) > acceleration[i])
+    if (!std::isfinite(p) || !std::isfinite(v) || !std::isfinite(a) ||
+        (has_position && (p < lower[i] || p > upper[i])) || std::abs(v) > velocity[i] || std::abs(a) > acceleration[i])
     {
       throw std::invalid_argument("Joint limit exceeded: " + joints[i]);
     }
@@ -159,7 +170,7 @@ rclcpp::QoS declare_command_qos(rclcpp::Node &node)
 {
   auto qos = rclcpp::QoS(1).reliable();
   const auto durability =
-      node.declare_parameter<std::string>("command_durability", "transient_local");
+      node.declare_parameter<std::string>("command_durability", "volatile");
   if (durability == "transient_local")
   {
     qos.transient_local();
@@ -176,12 +187,13 @@ trajectory_msgs::msg::JointTrajectoryPoint joint_command(const sensor_msgs::msg:
 {
   const std::set<std::string> names(message.name.begin(), message.name.end());
   if (message.name.empty() || names.count("") || names.size() != message.name.size() ||
-      message.position.size() != message.name.size() ||
+      (message.position.empty() && message.velocity.empty()) ||
+      (!message.position.empty() && message.position.size() != message.name.size()) ||
       (!message.velocity.empty() && message.velocity.size() != message.name.size()) ||
       !message.effort.empty())
   {
     throw std::invalid_argument(
-        "Expected unique names, positions, optional velocities and no effort");
+        "Expected unique names, positions and/or velocities, and no effort");
   }
 
   trajectory_msgs::msg::JointTrajectoryPoint point;
