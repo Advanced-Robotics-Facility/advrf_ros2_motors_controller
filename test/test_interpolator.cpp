@@ -260,8 +260,8 @@ TEST(MotorPower, ExplicitControlModesWithoutGains)
   {
     const auto mode = control_mode_from_string(name);
     const auto request = middleware_msgs::motor_start_request(7, mode).request;
-    EXPECT_EQ(request.type, advrf_interfaces::msg::ReplCmdContent::CTRL_CMD);
-    EXPECT_EQ(request.ctrl_cmd.type, advrf_interfaces::msg::CtrlCmd::CTRL_CMD_START);
+    EXPECT_EQ(request.type, advrf_ros2_interfaces::msg::ReplCmdContent::CTRL_CMD);
+    EXPECT_EQ(request.ctrl_cmd.type, advrf_ros2_interfaces::msg::CtrlCmd::CTRL_CMD_START);
     EXPECT_EQ(request.ctrl_cmd.board_id, 7);
     EXPECT_EQ(request.ctrl_cmd.value, static_cast<uint8_t>(mode));
     EXPECT_EQ(request.ctrl_cmd.gains.type, 0);
@@ -279,7 +279,7 @@ TEST(MotorPower, ExplicitControlModesWithoutGains)
   EXPECT_THROW(middleware_msgs::motor_start_request(1, static_cast<ControlMode>(0)),
                std::invalid_argument);
   const auto stop = middleware_msgs::motor_stop_request(7).request;
-  EXPECT_EQ(stop.type, advrf_interfaces::msg::ReplCmdContent::CTRL_CMD);
-  EXPECT_EQ(stop.ctrl_cmd.type, advrf_interfaces::msg::CtrlCmd::CTRL_CMD_STOP);
+  EXPECT_EQ(stop.type, advrf_ros2_interfaces::msg::ReplCmdContent::CTRL_CMD);
+  EXPECT_EQ(stop.ctrl_cmd.type, advrf_ros2_interfaces::msg::CtrlCmd::CTRL_CMD_STOP);
   EXPECT_EQ(stop.ctrl_cmd.board_id, 7);
 }

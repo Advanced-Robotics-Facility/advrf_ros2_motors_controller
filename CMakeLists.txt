@@ -4,7 +4,7 @@ project(advrf_ros2_motors_controller)
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 ament_python_install_package(${PROJECT_NAME})
-foreach(dependency rclcpp rclcpp_action control_msgs trajectory_msgs sensor_msgs builtin_interfaces advrf_interfaces std_srvs)
+foreach(dependency rclcpp rclcpp_action control_msgs trajectory_msgs sensor_msgs builtin_interfaces advrf_ros2_interfaces std_srvs)
   find_package(${dependency} REQUIRED)
 endforeach()
 
@@ -31,27 +31,27 @@ target_compile_options(motors_controller_common PRIVATE -Wall -Wextra -Wpedantic
 target_include_directories(motors_controller_common PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-ament_target_dependencies(motors_controller_common rclcpp sensor_msgs advrf_interfaces trajectory_msgs builtin_interfaces)
+ament_target_dependencies(motors_controller_common rclcpp sensor_msgs advrf_ros2_interfaces trajectory_msgs builtin_interfaces)
 
 add_executable(joint_trajectory_controller_node src/nodes/joint_trajectory_controller_node.cpp)
 target_link_libraries(joint_trajectory_controller_node motors_controller_common)
 target_compile_options(joint_trajectory_controller_node PRIVATE -Wall -Wextra -Wpedantic)
-ament_target_dependencies(joint_trajectory_controller_node rclcpp rclcpp_action control_msgs sensor_msgs advrf_interfaces std_srvs)
+ament_target_dependencies(joint_trajectory_controller_node rclcpp rclcpp_action control_msgs sensor_msgs advrf_ros2_interfaces std_srvs)
 
 add_executable(joint_command_controller_node src/nodes/joint_command_controller_node.cpp)
 target_link_libraries(joint_command_controller_node motors_controller_common)
 target_compile_options(joint_command_controller_node PRIVATE -Wall -Wextra -Wpedantic)
-ament_target_dependencies(joint_command_controller_node rclcpp sensor_msgs advrf_interfaces std_srvs)
+ament_target_dependencies(joint_command_controller_node rclcpp sensor_msgs advrf_ros2_interfaces std_srvs)
 
 add_executable(joint_go_to_node src/nodes/joint_go_to_node.cpp)
 target_link_libraries(joint_go_to_node motors_controller_common)
 target_compile_options(joint_go_to_node PRIVATE -Wall -Wextra -Wpedantic)
-ament_target_dependencies(joint_go_to_node rclcpp rclcpp_action control_msgs sensor_msgs advrf_interfaces)
+ament_target_dependencies(joint_go_to_node rclcpp rclcpp_action control_msgs sensor_msgs advrf_ros2_interfaces)
 
 add_executable(motor_power_node src/nodes/motor_power_node.cpp)
 target_link_libraries(motor_power_node motors_controller_common)
 target_compile_options(motor_power_node PRIVATE -Wall -Wextra -Wpedantic)
-ament_target_dependencies(motor_power_node rclcpp std_srvs advrf_interfaces)
+ament_target_dependencies(motor_power_node rclcpp std_srvs advrf_ros2_interfaces)
 
 install(TARGETS motor_power_node joint_trajectory_controller_node joint_command_controller_node joint_go_to_node DESTINATION lib/${PROJECT_NAME})
 
@@ -62,7 +62,7 @@ install(PROGRAMS scripts/test_joint_trajectory DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 install(FILES README.md plugin.xml DESTINATION share/${PROJECT_NAME})
 ament_export_targets(export_motors_controller_common HAS_LIBRARY_TARGET)
-ament_export_dependencies(yaml-cpp rclcpp rclcpp_action control_msgs trajectory_msgs sensor_msgs builtin_interfaces advrf_interfaces)
+ament_export_dependencies(yaml-cpp rclcpp rclcpp_action control_msgs trajectory_msgs sensor_msgs builtin_interfaces advrf_ros2_interfaces)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
@@ -101,7 +101,7 @@ if(BUILD_TESTING)
     TIMEOUT 25)
   ament_add_gtest(test_motion_math test/test_motion_math.cpp)
   target_link_libraries(test_motion_math motors_controller_common)
-  ament_target_dependencies(test_motion_math trajectory_msgs rclcpp sensor_msgs advrf_interfaces)
+  ament_target_dependencies(test_motion_math trajectory_msgs rclcpp sensor_msgs advrf_ros2_interfaces)
   ament_add_test(test_go_to
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_go_to.py"
       "$<TARGET_FILE:joint_go_to_node>" "$<TARGET_FILE:joint_trajectory_controller_node>" "$<TARGET_FILE:joint_command_controller_node>"
@@ -109,6 +109,6 @@ if(BUILD_TESTING)
     TIMEOUT 45)
   ament_add_gtest(test_interpolator test/test_interpolator.cpp)
   target_link_libraries(test_interpolator motors_controller_common)
-  ament_target_dependencies(test_interpolator control_msgs rclcpp_action sensor_msgs advrf_interfaces)
+  ament_target_dependencies(test_interpolator control_msgs rclcpp_action sensor_msgs advrf_ros2_interfaces)
 endif()
 ament_package()

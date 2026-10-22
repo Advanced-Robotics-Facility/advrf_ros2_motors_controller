@@ -4,7 +4,7 @@ import os
 import time
 import yaml
 
-from advrf_interfaces.action import GoToJointPositions
+from advrf_ros2_interfaces.action import GoToJointPositions
 from python_qt_binding.QtCore import QObject, Qt, QTimer, Signal
 from python_qt_binding.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
@@ -283,7 +283,7 @@ class MotorPanel(Plugin):
         prefix = self.endpoint('') + '/'
         return not any(name.startswith(prefix) and any(kind in (
             'control_msgs/action/FollowJointTrajectory',
-            'advrf_interfaces/action/GoToJointPositions') for kind in kinds)
+            'advrf_ros2_interfaces/action/GoToJointPositions') for kind in kinds)
             for node_name, node_namespace in self.node.get_node_names_and_namespaces()
             for name, kinds in get_action_server_names_and_types_by_node(
                 self.node, node_name, node_namespace))

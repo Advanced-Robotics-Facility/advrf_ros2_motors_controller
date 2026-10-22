@@ -9,7 +9,7 @@ public:
   {
     config_ = ControllerConfig::declare(*this);
 
-    publisher_ = create_publisher<advrf_interfaces::msg::MotorTxPdoVector>(
+    publisher_ = create_publisher<advrf_ros2_interfaces::msg::MotorTxPdoVector>(
         "tx/motors", declare_command_qos(*this));
 
     subscription_ = create_subscription<sensor_msgs::msg::JointState>(
@@ -48,7 +48,7 @@ private:
   ControllerConfig config_;
   std::vector<std::string> joint_names_;
   std::vector<size_t> joint_indices_;
-  rclcpp::Publisher<advrf_interfaces::msg::MotorTxPdoVector>::SharedPtr publisher_;
+  rclcpp::Publisher<advrf_ros2_interfaces::msg::MotorTxPdoVector>::SharedPtr publisher_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr subscription_;
 };
 } // namespace advrf_ros2_motors_controller

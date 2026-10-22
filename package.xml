@@ -18,7 +18,7 @@
   <depend>sensor_msgs</depend>
   <depend>std_srvs</depend>
   <depend>builtin_interfaces</depend>
-  <depend>advrf_interfaces</depend>
+  <depend>advrf_ros2_interfaces</depend>
   <depend>yaml-cpp</depend>
   
   <exec_depend>launch_ros</exec_depend>

@@ -26,7 +26,7 @@ ControlMode control_mode_from_string(const std::string &name)
 
 namespace middleware_msgs
 {
-advrf_interfaces::srv::ReplCmd::Request motor_start_request(
+advrf_ros2_interfaces::srv::ReplCmd::Request motor_start_request(
     int32_t board_id, ControlMode mode, const std::vector<double> &start_gains)
 {
   if (board_id < 0)
@@ -44,9 +44,9 @@ advrf_interfaces::srv::ReplCmd::Request motor_start_request(
   default:
     throw std::invalid_argument("Unsupported motor control mode");
   }
-  advrf_interfaces::srv::ReplCmd::Request request;
-  request.request.type = advrf_interfaces::msg::ReplCmdContent::CTRL_CMD;
-  request.request.ctrl_cmd.type = advrf_interfaces::msg::CtrlCmd::CTRL_CMD_START;
+  advrf_ros2_interfaces::srv::ReplCmd::Request request;
+  request.request.type = advrf_ros2_interfaces::msg::ReplCmdContent::CTRL_CMD;
+  request.request.ctrl_cmd.type = advrf_ros2_interfaces::msg::CtrlCmd::CTRL_CMD_START;
   request.request.ctrl_cmd.board_id = board_id;
   request.request.ctrl_cmd.value = static_cast<uint8_t>(mode);
   if (!start_gains.empty())
@@ -69,15 +69,15 @@ advrf_interfaces::srv::ReplCmd::Request motor_start_request(
   return request;
 }
 
-advrf_interfaces::srv::ReplCmd::Request motor_stop_request(int32_t board_id)
+advrf_ros2_interfaces::srv::ReplCmd::Request motor_stop_request(int32_t board_id)
 {
   if (board_id < 0)
   {
     throw std::invalid_argument("Negative motor board_id");
   }
-  advrf_interfaces::srv::ReplCmd::Request request;
-  request.request.type = advrf_interfaces::msg::ReplCmdContent::CTRL_CMD;
-  request.request.ctrl_cmd.type = advrf_interfaces::msg::CtrlCmd::CTRL_CMD_STOP;
+  advrf_ros2_interfaces::srv::ReplCmd::Request request;
+  request.request.type = advrf_ros2_interfaces::msg::ReplCmdContent::CTRL_CMD;
+  request.request.ctrl_cmd.type = advrf_ros2_interfaces::msg::CtrlCmd::CTRL_CMD_STOP;
   request.request.ctrl_cmd.board_id = board_id;
   return request;
 }
@@ -85,7 +85,7 @@ advrf_interfaces::srv::ReplCmd::Request motor_stop_request(int32_t board_id)
 
 struct MotorPowerClient::State
 {
-  using Service = advrf_interfaces::srv::ReplCmd;
+  using Service = advrf_ros2_interfaces::srv::ReplCmd;
   using Client = rclcpp::Client<Service>;
   using Clock = std::chrono::steady_clock;
 

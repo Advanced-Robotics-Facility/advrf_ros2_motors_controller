@@ -13,7 +13,7 @@ import unittest
 import rclpy
 from rclpy.parameter import Parameter
 from rclpy.parameter_client import AsyncParameterClient
-from advrf_interfaces.srv import ReplCmd
+from advrf_ros2_interfaces.srv import ReplCmd
 from std_srvs.srv import Trigger
 
 

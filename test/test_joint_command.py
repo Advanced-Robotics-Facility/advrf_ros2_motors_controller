@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 import rclpy
 from sensor_msgs.msg import JointState
-from advrf_interfaces.msg import MotorTxPdoVector
+from advrf_ros2_interfaces.msg import MotorTxPdoVector
 
 
 class JointCommandTest(unittest.TestCase):

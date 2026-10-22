@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 import rclpy
 from rclpy.action import ActionServer, CancelResponse
 from rclpy.executors import MultiThreadedExecutor
-from advrf_interfaces.action import GoToJointPositions
+from advrf_ros2_interfaces.action import GoToJointPositions
 from python_qt_binding.QtCore import QObject
 from python_qt_binding.QtWidgets import QApplication
 from sensor_msgs.msg import JointState

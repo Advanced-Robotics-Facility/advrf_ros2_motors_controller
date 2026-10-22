@@ -3,7 +3,7 @@
 #include "motor_types.hpp"
 #include "trajectory_utils.hpp"
 #include <trajectory_msgs/msg/joint_trajectory_point.hpp>
-#include <advrf_interfaces/msg/motor_tx_pdo_vector.hpp>
+#include <advrf_ros2_interfaces/msg/motor_tx_pdo_vector.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <array>
 #include <vector>
@@ -16,7 +16,7 @@ namespace advrf_ros2_motors_controller::middleware_msgs
 {
 namespace detail
 {
-inline advrf_interfaces::msg::MotorTxPdoVector
+inline advrf_ros2_interfaces::msg::MotorTxPdoVector
 from_joint_values(const std::vector<std::string> &joints, const std::vector<double> &positions,
                   const std::vector<double> &velocities, const MotorsDefinition &motors,
                   const std::array<float, 5> &gains = {})
@@ -27,7 +27,7 @@ from_joint_values(const std::vector<std::string> &joints, const std::vector<doub
     throw std::invalid_argument("Command dimensions mismatch");
   }
 
-  advrf_interfaces::msg::MotorTxPdoVector out;
+  advrf_ros2_interfaces::msg::MotorTxPdoVector out;
   for (size_t i = 0; i < joints.size(); ++i)
   {
     const double position = positions[i];
@@ -40,7 +40,7 @@ from_joint_values(const std::vector<std::string> &joints, const std::vector<doub
       }
     }
 
-    advrf_interfaces::msg::MotorTxPdo p;
+    advrf_ros2_interfaces::msg::MotorTxPdo p;
     p.ecat_id = motors.get_ecat_id(joints[i]);
     p.pos_ref = static_cast<float>(position);
     p.vel_ref = static_cast<float>(velocity);
@@ -57,7 +57,7 @@ from_joint_values(const std::vector<std::string> &joints, const std::vector<doub
 }
 } // namespace detail
 
-inline advrf_interfaces::msg::MotorTxPdoVector
+inline advrf_ros2_interfaces::msg::MotorTxPdoVector
 from_trajectory_point(const std::vector<std::string> &joints,
                       const trajectory_msgs::msg::JointTrajectoryPoint &point,
                       const MotorsDefinition &motors, const std::array<float, 5> &gains = {})
@@ -65,7 +65,7 @@ from_trajectory_point(const std::vector<std::string> &joints,
   return detail::from_joint_values(joints, point.positions, point.velocities, motors, gains);
 }
 
-inline advrf_interfaces::msg::MotorTxPdoVector
+inline advrf_ros2_interfaces::msg::MotorTxPdoVector
 from_joint_state(const sensor_msgs::msg::JointState &message, const MotorsDefinition &motors,
                  const std::array<float, 5> &gains = {})
 {
@@ -83,7 +83,7 @@ from_joint_state(const sensor_msgs::msg::JointState &message, const MotorsDefini
 }
 
 // Sample a previously validated trajectory, then convert its reference to motor commands.
-inline advrf_interfaces::msg::MotorTxPdoVector
+inline advrf_ros2_interfaces::msg::MotorTxPdoVector
 from_trajectory(const trajectory_msgs::msg::JointTrajectory &trajectory, double seconds,
                 const MotorsDefinition &motors, const std::array<float, 5> &gains = {})
 {

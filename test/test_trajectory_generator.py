@@ -13,7 +13,7 @@ from pathlib import Path
 
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
-from advrf_interfaces.msg import MotorTxPdoVector
+from advrf_ros2_interfaces.msg import MotorTxPdoVector
 from sensor_msgs.msg import JointState
 from advrf_ros2_motors_controller.test_trajectory import make_trajectory
 

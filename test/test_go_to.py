@@ -13,8 +13,8 @@ import unittest
 import rclpy
 from rclpy.action import ActionClient
 from action_msgs.msg import GoalStatus
-from advrf_interfaces.action import GoToJointPositions
-from advrf_interfaces.msg import MotorTxPdoVector
+from advrf_ros2_interfaces.action import GoToJointPositions
+from advrf_ros2_interfaces.msg import MotorTxPdoVector
 from sensor_msgs.msg import JointState
 
 

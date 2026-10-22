@@ -15,7 +15,7 @@ from control_msgs.action import FollowJointTrajectory
 from sensor_msgs.msg import JointState
 from std_srvs.srv import SetBool
 from trajectory_msgs.msg import JointTrajectoryPoint
-from advrf_interfaces.msg import MotorTxPdoVector
+from advrf_ros2_interfaces.msg import MotorTxPdoVector
 
 
 class ActionTest(unittest.TestCase):

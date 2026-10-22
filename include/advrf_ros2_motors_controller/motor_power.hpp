@@ -1,7 +1,7 @@
 #pragma once
 
 #include "motor_types.hpp"
-#include <advrf_interfaces/srv/repl_cmd.hpp>
+#include <advrf_ros2_interfaces/srv/repl_cmd.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <functional>
 #include <memory>
@@ -10,11 +10,11 @@ namespace advrf_ros2_motors_controller
 {
 enum class ControlMode : uint8_t
 {
-  Position = advrf_interfaces::msg::Gains::POSITION,
-  Velocity = advrf_interfaces::msg::Gains::VELOCITY,
-  Impedance = advrf_interfaces::msg::Gains::IMPEDANCE,
-  Torque = advrf_interfaces::msg::Gains::TORQUE,
-  Current = advrf_interfaces::msg::Gains::CURRENT
+  Position = advrf_ros2_interfaces::msg::Gains::POSITION,
+  Velocity = advrf_ros2_interfaces::msg::Gains::VELOCITY,
+  Impedance = advrf_ros2_interfaces::msg::Gains::IMPEDANCE,
+  Torque = advrf_ros2_interfaces::msg::Gains::TORQUE,
+  Current = advrf_ros2_interfaces::msg::Gains::CURRENT
 };
 
 ControlMode control_mode_from_string(const std::string &name);
@@ -30,9 +30,9 @@ struct MotorPowerResult
 namespace middleware_msgs
 {
 // gains.type == 0 means that START must retain the drive's existing gains.
-advrf_interfaces::srv::ReplCmd::Request motor_start_request(
+advrf_ros2_interfaces::srv::ReplCmd::Request motor_start_request(
     int32_t board_id, ControlMode mode, const std::vector<double> &start_gains = {});
-advrf_interfaces::srv::ReplCmd::Request motor_stop_request(int32_t board_id);
+advrf_ros2_interfaces::srv::ReplCmd::Request motor_stop_request(int32_t board_id);
 } // namespace middleware_msgs
 
 // Asynchronous, sequential calls. Use from a single-threaded executor.

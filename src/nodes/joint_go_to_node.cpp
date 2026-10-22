@@ -1,6 +1,6 @@
 #include "advrf_ros2_motors_controller/go_to.hpp"
 #include "advrf_ros2_motors_controller/trajectory_utils.hpp"
-#include <advrf_interfaces/action/go_to_joint_positions.hpp>
+#include <advrf_ros2_interfaces/action/go_to_joint_positions.hpp>
 #include <control_msgs/action/follow_joint_trajectory.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <chrono>
@@ -11,7 +11,7 @@ namespace advrf_ros2_motors_controller
 {
 class JointGoTo : public rclcpp::Node
 {
-  using GoTo = advrf_interfaces::action::GoToJointPositions;
+  using GoTo = advrf_ros2_interfaces::action::GoToJointPositions;
   using Follow = control_msgs::action::FollowJointTrajectory;
   using GoalHandle = rclcpp_action::ServerGoalHandle<GoTo>;
   using FollowHandle = rclcpp_action::ClientGoalHandle<Follow>;
