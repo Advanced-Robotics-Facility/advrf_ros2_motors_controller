@@ -39,12 +39,8 @@ public:
       throw std::invalid_argument("goal_time_tolerance exceeds the ROS duration range");
     }
 
-    client_ = rclcpp_action::create_client<Follow>(
-        this, declare_parameter<std::string>("action_name",
-                                             "advrf_motors_controller/follow_joint_trajectory"));
-    subscription_ = create_subscription<sensor_msgs::msg::JointState>(
-        "rx/joint_states", rclcpp::SensorDataQoS(),
-        [this](sensor_msgs::msg::JointState::ConstSharedPtr message)
+    client_ = rclcpp_action::create_client<Follow>(this, declare_parameter<std::string>("action_name","advrf_motors_controller/follow_joint_trajectory"));
+    subscription_ = create_subscription<sensor_msgs::msg::JointState>("rx/joint_states", rclcpp::SensorDataQoS(),[this](sensor_msgs::msg::JointState::ConstSharedPtr message)
         {
           receive(*message);
         });

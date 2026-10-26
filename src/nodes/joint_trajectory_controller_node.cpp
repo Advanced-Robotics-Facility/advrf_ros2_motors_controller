@@ -53,10 +53,8 @@ public:
       throw std::invalid_argument("Invalid rate, timeout or tolerance");
     }
 
-    publisher_ = create_publisher<sensor_msgs::msg::JointState>(
-        "joint_commands", rclcpp::QoS(1).reliable().durability_volatile());
-    subscription_ = create_subscription<sensor_msgs::msg::JointState>(
-        "rx/joint_states", rclcpp::SensorDataQoS(),
+    publisher_ = create_publisher<sensor_msgs::msg::JointState>("joint_commands", rclcpp::QoS(1).reliable().durability_volatile());
+    subscription_ = create_subscription<sensor_msgs::msg::JointState>("rx/joint_states", rclcpp::SensorDataQoS(),
         [this](sensor_msgs::msg::JointState::ConstSharedPtr msg)
         {
           receive(*msg);
@@ -367,8 +365,7 @@ private:
       }
 
       const auto desired = sample_trajectory(trajectory_, elapsed);
-      config_.check_indexed(desired,
-                            goal_indices_); // Includes spline overshoot at every emitted sample.
+      config_.check_indexed(desired, goal_indices_); // Includes spline overshoot at every emitted sample.
       const auto measured = measured_in_goal_order();
       const bool ended = elapsed >= time(trajectory_.points.back());
       bool reached = true;

@@ -49,6 +49,21 @@ ros2 launch advrf_ros2_motors_controller motors.launch.py \
 
 No motors start automatically.
 
+`motor_power_node` uses the generic `ReplCmdManager` to send asynchronous REPL
+requests. The manager tracks concurrent requests, waits for service availability,
+and completes each callback on reply or timeout without retrying. Use it from a
+single-threaded executor; the callback bool indicates receipt of a response,
+while `response->success` indicates a command ACK.
+
+Power-specific builders (`ReplCmdBuilder::build_motor_start` and
+`build_motor_stop`) construct the payloads. The node sequences them for
+`start_motors` / `stop_motors`, or selects one joint (e.g. `joint: "a"`) or all joints (`joint: "all"`)
+for `motor_power_request` using the
+configured control mode and START gains. START stops on the first failure;
+STOP attempts every selected motor. `all` is a sequential list of individual
+requests, with the next request sent after the previous completes. A missing reply is reported as an unknown outcome.
+
+
 ## Debug launcher
 
 ```bash

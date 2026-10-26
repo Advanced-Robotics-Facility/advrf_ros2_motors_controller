@@ -9,18 +9,14 @@ public:
   {
     config_ = ControllerConfig::declare(*this);
 
-    publisher_ = create_publisher<advrf_ros2_interfaces::msg::MotorTxPdoVector>(
-        "tx/motors", declare_command_qos(*this));
-
-    subscription_ = create_subscription<sensor_msgs::msg::JointState>(
-        "joint_commands", rclcpp::QoS(1).reliable().durability_volatile(),
+    publisher_ = create_publisher<advrf_ros2_interfaces::msg::MotorTxPdoVector>("tx/motors", declare_command_qos(*this));
+    subscription_ = create_subscription<sensor_msgs::msg::JointState>("joint_commands", rclcpp::QoS(1).reliable().durability_volatile(),
         [this](sensor_msgs::msg::JointState::ConstSharedPtr message)
         {
           forward(*message);
         });
 
-    RCLCPP_INFO(get_logger(), "JointState-to-motor converter ready (%zu motors)",
-                config_.joints.size());
+    RCLCPP_INFO(get_logger(), "JointState-to-motor converter ready (%zu motors)",config_.joints.size());
   }
 
 private:
@@ -40,8 +36,7 @@ private:
     }
     catch (const std::exception &error)
     {
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "Joint command rejected: %s",
-                           error.what());
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "Joint command rejected: %s", error.what());
     }
   }
 

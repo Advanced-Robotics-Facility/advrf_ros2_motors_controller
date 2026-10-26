@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "advrf_ros2_motors_controller/motor_power.hpp"
+#include "advrf_ros2_motors_controller/repl_cmd_manager.hpp"
 #include "advrf_ros2_motors_controller/command.hpp"
 #include "advrf_ros2_motors_controller/trajectory_utils.hpp"
 #include "advrf_ros2_motors_controller/controller_config.hpp"
@@ -259,7 +259,7 @@ TEST(MotorPower, ExplicitControlModesWithoutGains)
   for (const auto &name : {"position", "velocity", "impedance", "torque", "current"})
   {
     const auto mode = control_mode_from_string(name);
-    const auto request = middleware_msgs::motor_start_request(7, mode).request;
+    const auto request = ReplCmdBuilder::build_motor_start(7, static_cast<uint8_t>(mode)).request;
     EXPECT_EQ(request.type, advrf_ros2_interfaces::msg::ReplCmdContent::CTRL_CMD);
     EXPECT_EQ(request.ctrl_cmd.type, advrf_ros2_interfaces::msg::CtrlCmd::CTRL_CMD_START);
     EXPECT_EQ(request.ctrl_cmd.board_id, 7);
@@ -274,11 +274,11 @@ TEST(MotorPower, ExplicitControlModesWithoutGains)
   EXPECT_EQ(static_cast<uint8_t>(control_mode_from_string("position")), 59);
   EXPECT_EQ(static_cast<uint8_t>(control_mode_from_string("impedance")), 212);
   EXPECT_THROW(control_mode_from_string("unknown"), std::invalid_argument);
-  EXPECT_THROW(middleware_msgs::motor_start_request(-1, ControlMode::Position),
+  EXPECT_THROW(ReplCmdBuilder::build_motor_start(-1, static_cast<uint8_t>(ControlMode::Position)),
                std::invalid_argument);
-  EXPECT_THROW(middleware_msgs::motor_start_request(1, static_cast<ControlMode>(0)),
+  EXPECT_THROW(ReplCmdBuilder::build_motor_start(1, 0),
                std::invalid_argument);
-  const auto stop = middleware_msgs::motor_stop_request(7).request;
+  const auto stop = ReplCmdBuilder::build_motor_stop(7).request;
   EXPECT_EQ(stop.type, advrf_ros2_interfaces::msg::ReplCmdContent::CTRL_CMD);
   EXPECT_EQ(stop.ctrl_cmd.type, advrf_ros2_interfaces::msg::CtrlCmd::CTRL_CMD_STOP);
   EXPECT_EQ(stop.ctrl_cmd.board_id, 7);

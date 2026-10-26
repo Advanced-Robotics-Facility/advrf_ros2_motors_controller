@@ -6,6 +6,8 @@
 
 namespace advrf_ros2_motors_controller
 {
+
+  
 void MotorsDefinition::declare(int ecat_id, const std::string &joint_name)
 {
   if (ecat_id < 0 || joint_name.empty() || joint_name_to_ecat_id_.count(joint_name))

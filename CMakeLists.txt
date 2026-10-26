@@ -22,7 +22,7 @@ add_library(motors_controller_common
   src/lib/motor_types.cpp
   src/lib/controller_config.cpp
   src/lib/go_to.cpp
-  src/lib/motor_power.cpp
+  src/lib/repl_cmd_manager.cpp
 )
 
 target_link_libraries(motors_controller_common yaml-cpp motors_controller_math)
@@ -107,6 +107,11 @@ if(BUILD_TESTING)
       "$<TARGET_FILE:joint_go_to_node>" "$<TARGET_FILE:joint_trajectory_controller_node>" "$<TARGET_FILE:joint_command_controller_node>"
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO
     TIMEOUT 45)
+  ament_add_gtest(test_repl_cmd_manager test/test_repl_cmd_manager.cpp)
+  target_link_libraries(test_repl_cmd_manager motors_controller_common)
+  ament_target_dependencies(test_repl_cmd_manager rclcpp advrf_ros2_interfaces)
+  set_tests_properties(test_repl_cmd_manager PROPERTIES
+    ENVIRONMENT "ROS_DOMAIN_ID=191;ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST;ROS_LOG_DIR=/tmp/advrf_repl_test_logs")
   ament_add_gtest(test_interpolator test/test_interpolator.cpp)
   target_link_libraries(test_interpolator motors_controller_common)
   ament_target_dependencies(test_interpolator control_msgs rclcpp_action sensor_msgs advrf_ros2_interfaces)

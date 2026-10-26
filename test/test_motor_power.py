@@ -13,7 +13,7 @@ import unittest
 import rclpy
 from rclpy.parameter import Parameter
 from rclpy.parameter_client import AsyncParameterClient
-from advrf_ros2_interfaces.srv import ReplCmd
+from advrf_ros2_interfaces.srv import ReplCmd, MotorPowerRequest
 from std_srvs.srv import Trigger
 
 
@@ -49,6 +49,7 @@ class MotorPowerTest(unittest.TestCase):
             server = node.create_service(ReplCmd, 'replCmd', repl)
             start = node.create_client(Trigger, 'start_motors')
             stop = node.create_client(Trigger, 'stop_motors')
+            single = node.create_client(MotorPowerRequest, 'motor_power_request')
             parameters = AsyncParameterClient(node, '/power_test/motor_power_node')
             process = None
 
@@ -70,6 +71,7 @@ class MotorPowerTest(unittest.TestCase):
                     sys.argv[1], '--ros-args', '--params-file', str(config),
                     '-r', '__ns:=/power_test', '-p', f'control_mode:={mode}',
                     '-p', f'auto_start_motors:={str(auto_start).lower()}',
+                    '-p', f'motor_service_timeout:={3.0 if auto_start else 0.3}',
                 ] + (['-p', f'start_gains:={start_gains}'] if start_gains is not None else [])
                   + (['-p', f'start_joint_gains:={start_joint_gains}'] if start_joint_gains is not None else []),
                     stdout=log, stderr=log)
@@ -90,6 +92,39 @@ class MotorPowerTest(unittest.TestCase):
                         self.assertEqual(request.ctrl_cmd.gains.type, 0)
                         self.assertEqual(request.ctrl_cmd.gains.pos_kp, 0.0)
                         self.assertEqual(request.ctrl_cmd.gains.tor_kp, 0.0)
+
+                    self.assertTrue(single.wait_for_service(timeout_sec=5))
+                    requests.clear()
+                    on = MotorPowerRequest.Request(action=MotorPowerRequest.Request.ACTION_POWER_ON, joint='a')
+                    result = wait(single.call_async(on))
+                    self.assertTrue(result.success)
+                    self.assertFalse(result.outcome_unknown)
+                    self.assertEqual([r.ctrl_cmd.board_id for r in requests], [7])
+                    off = MotorPowerRequest.Request(action=MotorPowerRequest.Request.ACTION_POWER_OFF, joint='b')
+                    self.assertTrue(wait(single.call_async(off)).success)
+                    self.assertEqual(requests[-1].ctrl_cmd.type, 12)
+                    requests.clear()
+                    all_on = MotorPowerRequest.Request(action=MotorPowerRequest.Request.ACTION_POWER_ON, joint='all')
+                    self.assertTrue(wait(single.call_async(all_on)).success)
+                    self.assertEqual([r.ctrl_cmd.board_id for r in requests], [7, 2])
+                    requests.clear()
+                    all_off = MotorPowerRequest.Request(action=MotorPowerRequest.Request.ACTION_POWER_OFF, joint='all')
+                    self.assertTrue(wait(single.call_async(all_off)).success)
+                    self.assertEqual([r.ctrl_cmd.board_id for r in requests], [7, 2])
+                    self.assertTrue(all(r.ctrl_cmd.type == 12 for r in requests))
+                    count = len(requests)
+                    for invalid in [MotorPowerRequest.Request(action=99, joint='a'),
+                                    MotorPowerRequest.Request(action=1, joint='missing')]:
+                        result = wait(single.call_async(invalid))
+                        self.assertFalse(result.success)
+                        self.assertFalse(result.outcome_unknown)
+                    self.assertEqual(len(requests), count)
+                    delay[0] = True
+                    result = wait(single.call_async(on))
+                    self.assertFalse(result.success)
+                    self.assertTrue(result.outcome_unknown)
+                    delay[0] = False
+                    spin(0.1)
 
                     reject[0] = 7
                     requests.clear()
@@ -126,7 +161,9 @@ class MotorPowerTest(unittest.TestCase):
                     process.wait(timeout=5)
                     requests.clear()
                     launch(True)
-                    spin(0.4)
+                    deadline = time.monotonic() + 4
+                    while len(requests) < 2 and time.monotonic() < deadline:
+                        spin(0.05)
                     self.assertEqual([r.ctrl_cmd.board_id for r in requests], [7, 2])
                     self.assertTrue(all(r.ctrl_cmd.type == 11 for r in requests))
 
