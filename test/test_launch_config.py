@@ -111,7 +111,7 @@ class LaunchConfigTest(unittest.TestCase):
                 self.assertIsInstance(actions[0], ExecuteProcess)
                 description = module.generate_launch_description()
                 args = [e.name for e in description.entities if isinstance(e, DeclareLaunchArgument)]
-                self.assertEqual(args, ['ec_cfg', 'ros2_cfg', 'joint_limits', 'namespace'])
+                self.assertEqual(args, ['ec_cfg', 'ros2_cfg', 'joint_limits', 'namespace', 'ecat_namespace'])
 
     def test_references_and_overrides(self):
         with tempfile.TemporaryDirectory() as temporary:

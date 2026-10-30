@@ -11,12 +11,13 @@ from launch.substitutions import LaunchConfiguration
 def generate_launch_description():
     directory = Path(__file__).resolve().parent
     shared = ('ec_cfg', 'ros2_cfg', 'namespace', 'joint_limits', 'robot_id_map', 'control_mode',
-              'motor_profile', 'motor_profiles_dir')
+              'motor_profile', 'motor_profiles_dir', 'ecat_namespace')
     arguments = config_arguments() + [
         DeclareLaunchArgument('namespace', default_value=RobotNamespace(), description='Defaults to EC_CFG ros2.namespace'),
         DeclareLaunchArgument('joint_limits', default_value='', description='Defaults to ROS2_CFG or EC_CFG'),
         DeclareLaunchArgument('robot_id_map', default_value=''),
         DeclareLaunchArgument('control_mode', default_value='position', choices=['position', 'impedance', 'velocity', 'torque', 'current']),
+        DeclareLaunchArgument('ecat_namespace', default_value=''),
         DeclareLaunchArgument('motor_profile', default_value=''),
         DeclareLaunchArgument('motor_profiles_dir', default_value=''),
         DeclareLaunchArgument('trajectory_config', default_value=''),
@@ -34,5 +35,5 @@ def generate_launch_description():
     return LaunchDescription(arguments + [
         include('motors.launch.py', (*shared, 'start_gains'), auto_start_motors='false'),
         include('go_to.launch.py', (*shared, 'trajectory_config'), command_enabled='false', start_trajectory_controller='true'),
-        include('panel.launch.py', ('ec_cfg', 'ros2_cfg', 'namespace', 'joint_limits')),
+        include('panel.launch.py', ('ec_cfg', 'ros2_cfg', 'namespace', 'joint_limits', 'ecat_namespace')),
     ])

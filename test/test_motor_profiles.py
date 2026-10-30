@@ -6,6 +6,17 @@ from advrf_ros2_motors_controller.motor_profiles import profile_parameters
 
 
 class MotorProfilesTest(unittest.TestCase):
+    def test_native_wire_gains_preserve_start_gains(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'motor').mkdir()
+            (root / 'motor/position.yaml').write_text('joint: {control_mode: 59, gains: [10, 2, 3, 0, 0]}')
+            (root / 'joint.yaml').write_text('/**: {ros__parameters: {joints: [joint]}}')
+            (root / 'ec.yaml').write_text('robot: {robot_control_path: "${PWD}/control.yaml"}\nadvrf_ros2_ecat: {}')
+            params = profile_parameters(str(root / 'joint.yaml'), '', 'position', ec_cfg=str(root / 'ec.yaml'))
+            self.assertEqual(params['joint_gains'], [10., 3., 0., 0., 2.])
+            self.assertEqual(params['start_joint_gains'], [10., 2., 3., 0., 0.])
+
     def test_profiles(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

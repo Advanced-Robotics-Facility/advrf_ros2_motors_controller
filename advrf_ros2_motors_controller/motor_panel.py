@@ -57,9 +57,11 @@ class MotorPanel(Plugin):
         parser = argparse.ArgumentParser()
         parser.add_argument('--joint-limits', default='')
         parser.add_argument('--namespace', default=None)
+        parser.add_argument('--ecat-namespace', default=None)
         args = parser.parse_args(context.argv())
         from .launch_config import resolve_namespace
         args.namespace = resolve_namespace(args.namespace, os.environ.get('EC_CFG', ''))
+        self.ecat_namespace_override = args.ecat_namespace
         self.widget = QWidget()
         self.widget.setObjectName('AdvrfMotorPanel')
         self.widget.setWindowTitle('ADVRF · Joint control')
@@ -222,8 +224,12 @@ class MotorPanel(Plugin):
         token = self.token = object()
         def state_callback(message):
             self.dispatch.state.emit((token, message, time.monotonic()))
+        from .launch_config import resolve_ecat_namespace
+        transport_namespace = resolve_ecat_namespace(
+            self.ecat_namespace_override, os.environ.get('EC_CFG', ''), self.robot_namespace)
+        feedback_topic = transport_namespace.rstrip('/') + '/rx/joint_states'
         self.subscription = self.node.create_subscription(
-            JointState, self.endpoint('rx/joint_states'), state_callback, qos_profile_sensor_data)
+            JointState, feedback_topic, state_callback, qos_profile_sensor_data)
         self.action = ActionClient(self.node, GoToJointPositions, self.endpoint('go_to_joint_positions'))
         self.clients = [self.node.create_client(Trigger, self.endpoint(name))
                         for name in ('start_motors', 'stop_motors')]

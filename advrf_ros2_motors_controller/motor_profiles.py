@@ -59,4 +59,16 @@ def profile_parameters(joint_limits, namespace, mode, directory='', profile='', 
             selected.extend(next(iter(gains.values())))
         else:
             raise ValueError(f'{path}: no profile entry for {joint} ({alias}); configure profile_joints')
-    return {'path': str(path.resolve()), 'joint_gains': selected, 'start_joint_gains': selected}
+    command_gains = selected
+    if ec_cfg and mode in ('position', 'velocity'):
+        with Path(ec_cfg).open() as stream:
+            document = yaml.safe_load(stream) or {}
+        native = document.get('advrf_ros2_ecat', document.get('ec_ros2'))
+        # Native bridge accepts wire slots and inverts the client's permutation.
+        # An explicit motor_tx_profile already describes wire slots.
+        if native is not None and not document.get('ros2', {}).get('motor_tx_profile'):
+            command_gains = []
+            for offset in range(0, len(selected), 5):
+                kp, ki, kd, _, _ = selected[offset:offset + 5]
+                command_gains.extend([kp, kd, 0.0, 0.0, ki])
+    return {'path': str(path.resolve()), 'joint_gains': command_gains, 'start_joint_gains': selected}

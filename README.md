@@ -217,3 +217,25 @@ Velocity-only commands are forwarded as `vel_ref` with `pos_ref=0` in the fixed
 motor PDO layout. Start the motor in velocity mode with its matching profile;
 these messages do not change the motor's control mode. Trajectories still require
 positions. The direct controller does not send a zero velocity on command timeout.
+
+## Separate EtherCAT and ROS2 namespaces
+
+`ros2.namespace` in EC_CFG selects the high-level ROS2 namespace (for example
+`/advrf/bench`). `ecat_dds.namespace` selects the transport namespace (for example
+`/advrf/bench/ecat`). Controller launches remap rx/joint_states, rx/motors,
+tx/motors and replCmd to that transport namespace. Joint commands, actions,
+controller switching and public power services stay in the ROS2 namespace.
+The RQT panel and test_joint_trajectory resolve the same feedback namespace.
+
+All launches accept `ecat_namespace:=/advrf/bench/ecat`; the trajectory script
+accepts `--ecat-namespace /advrf/bench/ecat`. Existing EC configurations without
+a separate ecat_dds.namespace keep their original topic names.
+
+The canonical DDS section in EC_CFG is `ecat_dds`. The former `dds_bridge`
+section is accepted only as a fallback. If both exist, `ecat_dds` takes priority;
+keep only the new section in new configuration files.
+
+`ros2.motor_tx_profile` can select a dedicated DDS command gain-slot profile.
+It is used by command-converter launchers when no explicit motor_profile or
+motor_profiles_dir is passed. Motor power START keeps the original client
+profile, avoiding application of wire-slot gains to the START command.

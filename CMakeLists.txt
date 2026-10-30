@@ -67,6 +67,10 @@ ament_export_dependencies(yaml-cpp rclcpp rclcpp_action control_msgs trajectory_
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  ament_add_test(test_ecat_namespace
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_ecat_namespace.py"
+    GENERATE_RESULT_FOR_RETURN_CODE_ZERO
+    TIMEOUT 15)
   ament_add_test(test_launch_config
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_launch_config.py"
     APPEND_ENV "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}"

@@ -82,8 +82,10 @@ def make_trajectory(names, actual, joint, targets, rate):
 
 class TrajectoryTest(Node):
     def __init__(self, args):
-        from .launch_config import resolve_namespace
+        from .launch_config import resolve_namespace, resolve_ecat_namespace
         namespace = resolve_namespace(args.namespace, os.environ.get('EC_CFG', ''))
+        transport_namespace = resolve_ecat_namespace(
+            getattr(args, 'ecat_namespace', None), os.environ.get('EC_CFG', ''), namespace)
         super().__init__('test_joint_trajectory', namespace=namespace)
 
         config = resolve_panel_config(
@@ -106,7 +108,7 @@ class TrajectoryTest(Node):
 
         self.subscription = self.create_subscription(
             JointState,
-            'rx/joint_states',
+            transport_namespace.rstrip('/') + '/rx/joint_states',
             self.receive,
             qos_profile_sensor_data,
         )
@@ -253,6 +255,7 @@ def parse_arguments():
     )
     parser.add_argument('--joint-limits', default='')
     parser.add_argument('--namespace', default=None)
+    parser.add_argument('--ecat-namespace', default=None)
     parser.add_argument('--action', default='advrf_motors_controller/follow_joint_trajectory')
     parser.add_argument('--timeout', type=float, default=5.0)
 

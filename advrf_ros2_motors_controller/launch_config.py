@@ -1,6 +1,7 @@
 """Resolve robot configuration paths from EC_CFG at launch time."""
 
 import math
+import os
 from pathlib import Path
 
 import yaml
@@ -24,7 +25,7 @@ def robot_reference(ec_config, key):
 
     reference = reference.replace('${PWD}', str(ec_config.parent))
     reference = reference.replace('$PWD', str(ec_config.parent))
-    path = Path(reference)
+    path = Path(os.path.expandvars(reference))
     return path if path.is_absolute() else ec_config.parent / path
 
 
@@ -39,8 +40,27 @@ def ros2_folder(ec_config):
     if not isinstance(reference, str) or not reference.strip():
         raise ValueError(f'{ec_config}: ros2.folder must be a nonempty path')
     base = Path(ec_config).expanduser().resolve().parent
-    path = Path(reference.replace('${PWD}', str(base)).replace('$PWD', str(base))).expanduser()
+    path = Path(os.path.expandvars(reference.replace('${PWD}', str(base)).replace('$PWD', str(base)))).expanduser()
     return path if path.is_absolute() else base / path
+
+
+def resolve_motor_profile(explicit='', directory='', ec_cfg='', motor_power=False):
+    """Use a DDS TX profile only for command conversion, never for motor START."""
+    if explicit or directory or motor_power or not ec_cfg:
+        return explicit
+    config = Path(ec_cfg).expanduser().resolve(strict=True)
+    with config.open() as stream:
+        document = yaml.safe_load(stream) or {}
+    reference = document.get('ros2', {}).get('motor_tx_profile', '')
+    if not reference:
+        return ''
+    if not isinstance(reference, str):
+        raise ValueError('ros2.motor_tx_profile must be a path string')
+    value = reference.replace('${PWD}', str(config.parent)).replace('$PWD', str(config.parent))
+    path = Path(os.path.expandvars(value)).expanduser()
+    if not path.is_absolute():
+        path = config.parent / path
+    return str(path.resolve(strict=True))
 
 
 def resolve_namespace(explicit=None, ec_cfg=''):
@@ -62,6 +82,39 @@ def resolve_namespace(explicit=None, ec_cfg=''):
     namespace = '/' + namespace.strip('/')
     validate_namespace(namespace)
     return namespace
+
+
+def resolve_ecat_namespace(explicit=None, ec_cfg='', namespace=''):
+    """Keep low-level transport topics separate from high-level ROS interfaces."""
+    value = explicit
+    if not value and ec_cfg:
+        with Path(ec_cfg).expanduser().open() as stream:
+            document = yaml.safe_load(stream) or {}
+        native = document.get('advrf_ros2_ecat', document.get('ec_ros2'))
+        section = native if native is not None else document.get('ecat_dds')
+        if section is None:
+            section = document.get('dds_bridge', {})
+        if not isinstance(section, dict):
+            raise ValueError('ecat_dds must be a mapping')
+        value = section.get('namespace')
+        if not value and native is not None:
+            base = (namespace or resolve_namespace(ec_cfg=ec_cfg) or '/').rstrip('/')
+            value = base + '/ecat'
+    if not value:
+        # Preserve existing middleware configurations without a separate DDS prefix.
+        value = namespace or resolve_namespace(ec_cfg=ec_cfg) or '/'
+    if not isinstance(value, str):
+        raise ValueError('ecat_namespace must be a string')
+    value = '/' + value.strip().strip('/')
+    from rclpy.validate_namespace import validate_namespace
+    validate_namespace(value)
+    return value
+
+
+def ecat_remappings(namespace):
+    prefix = namespace.rstrip('/')
+    return [(name, prefix + '/' + name)
+            for name in ('rx/joint_states', 'rx/motors', 'tx/motors', 'replCmd')]
 
 
 def config_argument(context, name):
@@ -148,6 +201,11 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
     uses_trajectory = config_name == 'trajectory_config'
 
     def launch_controller(context):
+        transport_namespace = resolve_ecat_namespace(
+            LaunchConfiguration('ecat_namespace', default='').perform(context),
+            config_argument(context, 'ec_cfg'),
+            LaunchConfiguration('namespace').perform(context))
+        remappings = ecat_remappings(transport_namespace)
         joint_limits, id_map = resolve_paths(
             LaunchConfiguration('joint_limits').perform(context),
             LaunchConfiguration('robot_id_map').perform(context),
@@ -173,7 +231,9 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
             LaunchConfiguration('namespace').perform(context),
             LaunchConfiguration('control_mode').perform(context),
             LaunchConfiguration('motor_profiles_dir').perform(context),
-            LaunchConfiguration('motor_profile').perform(context),
+            resolve_motor_profile(LaunchConfiguration('motor_profile').perform(context),
+                LaunchConfiguration('motor_profiles_dir').perform(context),
+                config_argument(context, 'ec_cfg'), motor_power),
             config_argument(context, 'ec_cfg'))
         if uses_trajectory:
             shared_files.append({'command_enabled': ParameterValue(
@@ -212,6 +272,7 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
             executable=executable,
             namespace=LaunchConfiguration('namespace'),
             output='screen',
+            remappings=remappings,
             parameters=parameters,
         )]
         if with_trajectory_controller:
@@ -220,6 +281,7 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
                 executable='joint_trajectory_controller_node',
                 namespace=LaunchConfiguration('namespace'),
                 output='screen',
+                remappings=remappings,
                 parameters=shared_files + [{'robot_id_map': id_map}],
                 condition=IfCondition(LaunchConfiguration('start_trajectory_controller')),
             ))
@@ -230,6 +292,7 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
                 executable='joint_command_controller_node',
                 namespace=LaunchConfiguration('namespace'),
                 output='screen',
+                remappings=remappings,
                 parameters=[entry for entry in shared_files
                             if not isinstance(entry, dict) or 'command_enabled' not in entry]
                            + [{'robot_id_map': id_map}],
@@ -251,6 +314,8 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
             description='Joint map YAML; defaults to EC_CFG robot.robot_id_map_path',
         ),
         DeclareLaunchArgument('namespace', default_value=RobotNamespace()),
+        DeclareLaunchArgument('ecat_namespace', default_value='',
+            description='Transport topics namespace; defaults to EC_CFG ecat_dds.namespace'),
         DeclareLaunchArgument('motor_profile', default_value='', description='Explicit middleware motor profile YAML'),
         DeclareLaunchArgument('motor_profiles_dir', default_value='', description='Profiles directory; defaults beside EC_CFG robot_control_path'),
         DeclareLaunchArgument('control_mode', default_value='position',
