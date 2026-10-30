@@ -137,10 +137,11 @@ class MotorPanel(Plugin):
         self.log.setMaximumBlockCount(200)
         layout.addWidget(self.log)
         self.timer = QTimer(self.widget)
+        
         self.timer.timeout.connect(self.refresh)
         self.timer.start(100)
         self.stream_timer = QTimer(self.widget)
-        self.stream_timer.setInterval(50)
+        self.stream_timer.setInterval(20)
         self.stream_timer.timeout.connect(self.publish_continuous)
         context.add_widget(self.widget)
         if not args.joint_limits:
