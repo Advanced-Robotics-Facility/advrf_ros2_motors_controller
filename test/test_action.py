@@ -22,12 +22,12 @@ class ActionTest(unittest.TestCase):
     def test_execution(self):
         with tempfile.TemporaryDirectory() as tmp:
             os.environ['ROS_LOG_DIR'] = tmp
-            mapping = Path(tmp) / 'middleware.yaml'
+            mapping = Path(tmp) / 'robot_id_map.yaml'
             mapping.write_text('joint_map: {7: a, 2: b, 4: imu}\n')
             config = Path(tmp) / 'controller.yaml'
             config.write_text(f'''/**:
   ros__parameters:
-    middleware_config: {mapping}
+    robot_id_map: {mapping}
     joints: [a, b]
     position_lower: [-2.0, -2.0]
     position_upper: [2.0, 2.0]

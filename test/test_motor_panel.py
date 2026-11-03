@@ -39,6 +39,47 @@ class PanelTest(unittest.TestCase):
             panel.command_publisher.get_subscription_count.return_value = 0
             self.assertFalse(MotorPanel.mode_services_available(panel))
 
+    def test_panel_reads_controller_parameter_service(self):
+        app = QApplication.instance() or QApplication([])
+        rclpy.init()
+        ui = rclpy.create_node('parameter_panel_ui')
+        fake = rclpy.create_node('joint_go_to_node', namespace='/parameter_test')
+        for name, value in [('joints', ['joint_a']), ('position_lower', [-0.4]),
+                            ('position_upper', [0.8]), ('max_velocity', [0.3])]:
+            fake.declare_parameter(name, value)
+
+        class Context(QObject):
+            node = ui
+            def argv(self):
+                return ['--parameter-node', '/parameter_test/joint_go_to_node',
+                        '--namespace', '/parameter_test',
+                        '--ecat-namespace', '/parameter_test/ecat']
+            def add_widget(self, widget):
+                pass
+
+        executor = MultiThreadedExecutor(num_threads=2)
+        executor.add_node(ui)
+        executor.add_node(fake)
+        thread = threading.Thread(target=executor.spin, daemon=True)
+        thread.start()
+        panel = MotorPanel(Context())
+        try:
+            deadline = time.monotonic() + 5
+            while not panel.joints and time.monotonic() < deadline:
+                app.processEvents()
+                time.sleep(0.01)
+            self.assertEqual(panel.joints, [('joint_a', -0.4, 0.8)])
+            self.assertEqual(panel.max_velocities, [0.3])
+            self.assertEqual(panel.rows[0][1].minimum(), -0.4)
+            self.assertEqual(panel.rows[0][1].maximum(), 0.8)
+        finally:
+            panel.shutdown_plugin()
+            executor.shutdown()
+            thread.join(timeout=3)
+            ui.destroy_node()
+            fake.destroy_node()
+            rclpy.shutdown()
+
     def test_panel_with_fake_endpoints(self):
         self.assertEqual(os.environ.get('ROS_DOMAIN_ID'), '218')
         app = QApplication.instance() or QApplication([])

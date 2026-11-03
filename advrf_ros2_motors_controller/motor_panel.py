@@ -1,4 +1,5 @@
 """Local rqt frontend. Explicit GoTo or continuous joint commands through exclusive controllers."""
+import math
 import argparse
 import os
 import time
@@ -55,21 +56,28 @@ class MotorPanel(Plugin):
         self.dispatch.run.connect(lambda fn: fn())
         self.dispatch.state.connect(self.receive)
         parser = argparse.ArgumentParser()
+        parser.add_argument('--parameter-node', default='')
         parser.add_argument('--joint-limits', default='')
         parser.add_argument('--namespace', default=None)
         parser.add_argument('--ecat-namespace', default=None)
         args = parser.parse_args(context.argv())
         from .launch_config import resolve_namespace
         args.namespace = resolve_namespace(args.namespace, os.environ.get('EC_CFG', ''))
+        self.parameter_node = args.parameter_node
+        self.remote_limits = None
+        self.parameter_future = None
+        self.parameter_client = None
         self.ecat_namespace_override = args.ecat_namespace
         self.widget = QWidget()
         self.widget.setObjectName('AdvrfMotorPanel')
         self.widget.setWindowTitle('ADVRF · Joint control')
         layout = QVBoxLayout(self.widget)
         line = QHBoxLayout()
-        self.config = QLineEdit(args.joint_limits)
+        self.config = QLineEdit(args.parameter_node or args.joint_limits)
+        self.config.setReadOnly(bool(args.parameter_node))
         browse = QPushButton('Browse…')
         browse.clicked.connect(self.browse)
+        browse.setEnabled(not bool(args.parameter_node))
         line.addWidget(QLabel('Joint config'))
         line.addWidget(self.config)
         line.addWidget(browse)
@@ -144,7 +152,7 @@ class MotorPanel(Plugin):
         self.stream_timer.setInterval(20)
         self.stream_timer.timeout.connect(self.publish_continuous)
         context.add_widget(self.widget)
-        if not args.joint_limits:
+        if not args.joint_limits and not args.parameter_node:
             try:
                 self.config.setText(resolve_panel_config('',
                     os.environ.get('EC_CFG', ''), os.environ.get('ROS2_CFG', '')))
@@ -165,14 +173,58 @@ class MotorPanel(Plugin):
     def endpoint(self, name):
         return '/' + '/'.join(filter(None, [self.robot_namespace.strip('/'), name]))
 
+    def fetch_parameters(self):
+        from rcl_interfaces.srv import GetParameters
+        if self.parameter_future is not None:
+            return
+        if self.parameter_client is None:
+            self.parameter_client = self.node.create_client(
+                GetParameters, self.parameter_node.rstrip('/') + '/get_parameters')
+        if not self.parameter_client.service_is_ready():
+            self.note('Waiting for controller parameters…')
+            QTimer.singleShot(1000, lambda: self.connect_robot() if not self.closed else None)
+            return
+        request = GetParameters.Request()
+        request.names = ['joints', 'position_lower', 'position_upper', 'max_velocity']
+        self.parameter_future = self.parameter_client.call_async(request)
+        self.parameter_future.add_done_callback(
+            lambda future: self.dispatch.run.emit(lambda: self.parameters_received(future)))
+
+    def parameters_received(self, future):
+        self.parameter_future = None
+        if self.closed:
+            return
+        try:
+            values = future.result().values
+            if len(values) != 4 or values[0].type != 9 or any(v.type != 8 for v in values[1:]):
+                raise ValueError('Controller returned missing or incorrectly typed limits')
+            names = list(values[0].string_array_value)
+            lower, upper, velocities = [list(v.double_array_value) for v in values[1:]]
+            if (not names or len(set(names)) != len(names) or
+                    any(len(v) != len(names) for v in (lower, upper, velocities)) or
+                    any(not math.isfinite(x) for v in (lower, upper, velocities) for x in v) or
+                    any(lo > hi for lo, hi in zip(lower, upper)) or min(velocities) <= 0):
+                raise ValueError('Invalid controller limits')
+            self.remote_limits = (names, lower, upper, velocities)
+            self.connect_robot()
+        except Exception as error:
+            self.note(f'Cannot read controller parameters: {error}')
+
     def connect_robot(self):
         if self.busy or self.power_busy or self.streaming or self.mode_pending:
             return
         try:
             namespace = '/' + self.namespace.text().strip().strip('/')
             validate_namespace(namespace)
-            joints = load_joints(self.config.text(), namespace)
-            velocities = load_velocities(self.config.text(), namespace, joints)
+            if getattr(self, 'parameter_node', ''):
+                if self.remote_limits is None:
+                    self.fetch_parameters()
+                    return
+                names, lower, upper, velocities = self.remote_limits
+                joints = list(zip(names, lower, upper))
+            else:
+                joints = load_joints(self.config.text(), namespace)
+                velocities = load_velocities(self.config.text(), namespace, joints)
         except (ValueError, OSError, TypeError, AttributeError, yaml.YAMLError) as error:
             self.note(f'Configuration rejected : {error}')
             return
@@ -569,6 +621,11 @@ class MotorPanel(Plugin):
         self.timer.stop()
         self.stream_timer.stop()
         self.streaming = False
+        if self.parameter_client is not None:
+            if self.parameter_future is not None:
+                self.parameter_future.cancel()
+            self.node.destroy_client(self.parameter_client)
+            self.parameter_client = None
         # Closing a panel is not a motor power command.
         if self.handle and self.busy:
             self.handle.cancel_goal_async()

@@ -283,3 +283,17 @@ TEST(MotorPower, ExplicitControlModesWithoutGains)
   EXPECT_EQ(stop.ctrl_cmd.type, advrf_ros2_interfaces::msg::CtrlCmd::CTRL_CMD_STOP);
   EXPECT_EQ(stop.ctrl_cmd.board_id, 7);
 }
+
+TEST(Motors, ParameterIdsValidation)
+{
+  using advrf_ros2_motors_controller::MotorsDefinition;
+  const auto motors = MotorsDefinition::from_ids({7, 1}, {"claw", "yaw"});
+  EXPECT_EQ(motors.get_ecat_id("claw"), 7);
+  EXPECT_EQ(motors.get_ecat_id("yaw"), 1);
+  EXPECT_THROW(MotorsDefinition::from_ids({}, {}), std::invalid_argument);
+  EXPECT_THROW(MotorsDefinition::from_ids({1}, {"a", "b"}), std::invalid_argument);
+  EXPECT_THROW(MotorsDefinition::from_ids({1, 1}, {"a", "b"}), std::invalid_argument);
+  EXPECT_THROW(MotorsDefinition::from_ids({1, 2}, {"a", "a"}), std::invalid_argument);
+  EXPECT_THROW(MotorsDefinition::from_ids({-1}, {"a"}), std::invalid_argument);
+  EXPECT_THROW(MotorsDefinition::from_ids({2147483648LL}, {"a"}), std::invalid_argument);
+}

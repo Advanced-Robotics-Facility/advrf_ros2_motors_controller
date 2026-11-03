@@ -239,3 +239,67 @@ keep only the new section in new configuration files.
 It is used by command-converter launchers when no explicit motor_profile or
 motor_profiles_dir is passed. Motor power START keeps the original client
 profile, avoiding application of wire-slot gains to the START command.
+
+## ROS-only robot configuration
+
+Use `robot.launch.py config_dir:=/path/to/robot/ros2 namespace:=/advrf/robot`.
+This launch does not read EC_CFG for ROS configuration. Existing launches remain
+available for compatibility.
+
+The ROS directory contains `config/joint_limits.yaml` (standard MoveIt limits),
+`moveit_controllers.yaml` (one shared FollowJointTrajectory action and joint
+order), `advrf_hardware.yaml`, `advrf_controllers.yaml`, `advrf_bridge.yaml` and
+`joint_control.yaml`. Robot-specific configuration is installed by advrf_ros2_bench_bringup and
+advrf_ros2_miranda_bringup. Use their debug.launch.py with use_joy:=true for
+controllers, panel and joystick.
+
+`advrf_hardware.yaml` is launch input with numeric keys, not a directly loadable
+ROS parameter file:
+
+```yaml
+joint_map:
+  1: joint_a
+profiles:
+  position:
+    joint_a:
+      gains: [200.0, 0.0, 10.0, 0.0, 0.0]
+```
+
+Launch converts IDs to `motor_ids` integer parameters aligned with `joints`.
+It selects `profiles.<control_mode>`, validates five finite float32 gains for
+every joint, and passes original gains to motor START and permuted wire gains
+to the converter for native position/velocity control. Do not manually reorder
+these profiles. Missing profiles fail initialization. The selected mode is
+startup-only. Real gain values must be validated for the robot.
+
+URDF/Xacro is optional for standalone control: set `robot_description_file:=`
+and provide min_position/max_position/max_velocity/max_acceleration in the
+MoveIt limit entries. Otherwise `robot_description_file:=auto` finds a single
+plain URDF in ros2/urdf; an explicit model path also supports Xacro. Overrides
+must remain inside physical URDF limits. Continuous/unbounded joints need an
+explicit finite operating range for ADVRF control.
+
+The panel uses `--parameter-node /namespace/joint_go_to_node` to obtain the
+same joint limits through the ROS parameter service. Its older file-based mode
+remains available. `use_joy:=true` passes those same joints/position bounds to
+manual control. Node names, namespaces, remappings and ROS_DOMAIN_ID remain
+launch/context settings.
+
+`start_bridge:=false` is the default. Optional native bridge startup still
+requires the separate EtherCAT client environment (EC_CFG) and running master.
+The native bridge does not implement replCmd; motor-power START/STOP needs the
+existing compatible service backend. This change does not alter client config
+or add a new motor-power protocol implementation.
+
+
+## Central scalar robot configuration
+
+Current Bench/Miranda bringup uses config/robot_config.yaml instead of separate
+hardware and limit files. A robot_config_node exposes motor IDs, operating
+limits and scalar gain_0 through gain_4 parameters per joint/profile. Launch
+uses the same conversion/validation library to generate ADVRF arrays and standard
+MoveIt limits. Select this node in rqt rather than editing controller snapshots.
+Edits require the node's ~/save Trigger service and a stack restart; there is no
+implicit live gain or MoveIt reconfiguration. See each bringup package README
+for the schema, optional gain bounds and persistence behavior. Older file-backed
+launch interfaces remain available for compatibility.

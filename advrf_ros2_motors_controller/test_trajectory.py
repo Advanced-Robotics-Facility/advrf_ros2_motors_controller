@@ -246,7 +246,7 @@ def parse_arguments():
         type=float,
         help='Seconds from initial position to min; defaults to duration',
     )
-    parser.add_argument('--rate', type=float, default=20.0, help='Trajectory points per second')
+    parser.add_argument('--rate', type=float, default=200.0, help='Trajectory points per second')
     parser.add_argument(
         '--repeat',
         type=int,

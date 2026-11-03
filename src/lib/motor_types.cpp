@@ -50,6 +50,21 @@ int32_t MotorsDefinition::get_ecat_id(const std::string &joint_name) const
   return it->second;
 }
 
+MotorsDefinition MotorsDefinition::from_ids(const std::vector<int64_t> &ids,
+                                            const std::vector<std::string> &joints)
+{
+  if (joints.empty() || ids.size() != joints.size())
+    throw std::invalid_argument("motor_ids must contain one ID per configured joint");
+  MotorsDefinition result;
+  for (size_t i = 0; i < ids.size(); ++i)
+  {
+    if (ids[i] < 0 || ids[i] > std::numeric_limits<int32_t>::max())
+      throw std::invalid_argument("EtherCAT ID outside int32 range");
+    result.declare(static_cast<int>(ids[i]), joints[i]);
+  }
+  return result;
+}
+
 MotorsDefinition MotorsDefinition::load(const std::string &path,
                                         const std::vector<std::string> &joints)
 {

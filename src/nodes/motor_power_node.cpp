@@ -20,7 +20,10 @@ public:
   MotorPowerNode() : Node("motor_power_node")
   {
     const auto joints = declare_parameter<std::vector<std::string>>("joints", std::vector<std::string>{});
-    const auto motors = MotorsDefinition::load(declare_parameter<std::string>("robot_id_map", ""), joints);
+    const auto map_path = declare_parameter<std::string>("robot_id_map", "");
+    const auto ids = declare_parameter<std::vector<int64_t>>("motor_ids", std::vector<int64_t>{});
+    const auto motors = ids.empty() ? MotorsDefinition::load(map_path, joints)
+                                    : MotorsDefinition::from_ids(ids, joints);
 
     rcl_interfaces::msg::ParameterDescriptor gains_descriptor;
     gains_descriptor.read_only = true;

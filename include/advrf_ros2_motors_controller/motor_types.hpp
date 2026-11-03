@@ -16,6 +16,8 @@ public:
   const std::array<float, 5> &gains_for_joint(
       const std::string &joint, const std::array<float, 5> &fallback) const;
   int32_t get_ecat_id(const std::string &joint_name) const;
+  static MotorsDefinition from_ids(const std::vector<int64_t> &ids,
+                                   const std::vector<std::string> &joints);
   // Reads robot_id_map joint_map: {ecat_id: joint_name}. Only selected joints are motors.
   static MotorsDefinition load(const std::string &path, const std::vector<std::string> &joints);
 

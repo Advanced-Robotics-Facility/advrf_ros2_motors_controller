@@ -58,7 +58,7 @@ install(TARGETS motor_power_node joint_trajectory_controller_node joint_command_
 install(TARGETS motors_controller_common motors_controller_math EXPORT export_motors_controller_common
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
 install(DIRECTORY include/ DESTINATION include)
-install(PROGRAMS scripts/test_joint_trajectory DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/robot_config_node scripts/test_joint_trajectory DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 install(FILES README.md plugin.xml DESTINATION share/${PROJECT_NAME})
 ament_export_targets(export_motors_controller_common HAS_LIBRARY_TARGET)
@@ -80,6 +80,19 @@ if(BUILD_TESTING)
       "$<TARGET_FILE:joint_trajectory_controller_node>" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_joint_trajectory" "$<TARGET_FILE:joint_command_controller_node>"
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO
     TIMEOUT 30)
+  ament_add_test(test_robot_config_node
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_robot_config_node.py"
+    APPEND_ENV "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}"
+    GENERATE_RESULT_FOR_RETURN_CODE_ZERO
+    TIMEOUT 20)
+  ament_add_test(test_central_config
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_central_config.py"
+    APPEND_ENV "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}"
+    GENERATE_RESULT_FOR_RETURN_CODE_ZERO)
+  ament_add_test(test_robot_config
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_robot_config.py"
+    APPEND_ENV "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}"
+    GENERATE_RESULT_FOR_RETURN_CODE_ZERO)
   ament_add_test(test_motor_profiles
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_motor_profiles.py"
     APPEND_ENV "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}"
