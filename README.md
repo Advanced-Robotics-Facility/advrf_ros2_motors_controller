@@ -49,7 +49,7 @@ ros2 launch advrf_ros2_motors_controller motors.launch.py \
 
 No motors start automatically.
 
-`motor_power_node` uses the generic `ReplCmdManager` to send asynchronous REPL
+`motor_power_manager_node` uses the generic `ReplCmdManager` to send asynchronous REPL
 requests. The manager tracks concurrent requests, waits for service availability,
 and completes each callback on reply or timeout without retrying. Use it from a
 single-threaded executor; the callback bool indicates receipt of a response,
@@ -110,7 +110,7 @@ GoTo → FollowJointTrajectory → trajectory controller ─┐
 Panel / external JointState producer ────────────────┘
 ```
 
-`joint_command_controller_node` has one public `JointState` input, `joint_commands`,
+`converter_tx_motor_node` has one public `JointState` input, `joint_commands`,
 and is the only publisher of `tx/motors`. It validates references, maps joint names
 to motor IDs and applies motor gains. It neither selects sources nor generates motion.
 Any upstream producer can feed this converter using the same message contract.
@@ -239,3 +239,75 @@ keep only the new section in new configuration files.
 It is used by command-converter launchers when no explicit motor_profile or
 motor_profiles_dir is passed. Motor power START keeps the original client
 profile, avoiding application of wire-slot gains to the START command.
+
+### Updating joint gains at runtime
+
+`converter_tx_motor_node` exposes `~/set_joint_gains`
+(`advrf_ros2_interfaces/srv/SetJointGains`). Provide a configured joint name
+and all five PDO gain slots, in the same order as `joint_gains`:
+
+```bash
+ros2 service call /converter_tx_motor_node/set_joint_gains \
+  advrf_ros2_interfaces/srv/SetJointGains \
+  "{joint_name: joint_a, gains: [1.0, 2.0, 3.0, 4.0, 5.0]}"
+```
+
+The response contains `success` and `message`. Unknown joints and non-finite
+or out-of-float32-range gains are rejected without changing the current gains.
+Accepted gains apply to subsequent commands for that joint; the service itself
+does not publish a motor command. Changes last until node restart and do not
+modify YAML files, ROS parameters, or motor START gains.
+
+
+`converter_tx_motor_node` accepts `gain_mask`, five booleans in ROS PDO
+order (`gain_0` through `gain_4`), shared by all joints. Default:
+`[true, true, true, true, true]`. The `set_joint_gains` service preserves the
+current value of disabled slots; startup gains are unaffected. Requests must
+still contain five finite float32-representable values. The mask can be set
+in the node YAML or changed at runtime:
+
+```bash
+ros2 param set /advrf/bench/controllers/converter_tx_motor_node gain_mask '[true, true, false, false, true]'
+```
+
+
+## Node namespaces
+
+Launch argument `namespace` is the robot prefix. For `/advrf/bench`, launches
+place `converter_tx_motor_node`, `joint_trajectory_controller_node`, and
+`joint_goal_manager_node` under `/advrf/bench/controllers`, and
+`motor_power_manager_node` under `/advrf/bench/hardware`. Joystick and manual
+input nodes run under `/advrf/bench/inputs`. The native EtherCAT bridge is
+`/advrf/bench/ecat/bridge_ecat_client_node` (package `advrf_ros2_ecat`).
+
+Actions and power services remain at the robot prefix; joint commands use
+`controllers/joint_commands` and selection uses `inputs/selected_joint`. EtherCAT
+PDO topics remain under the transport prefix. The panel still takes the robot
+prefix. Private services/parameters follow the grouped node, for example
+`/advrf/bench/controllers/converter_tx_motor_node/set_joint_gains`.
+Executable names now match the new node names. Update external scripts/YAML
+node selectors using the previous names. Direct `ros2 run` invocations can
+choose their namespace with `--ros-args -r __ns:=...`.
+
+
+## Continuous motor command output
+
+`converter_tx_motor_node` publishes each accepted input immediately, then
+repeats the last valid batch at `publish_rate` (default 250 Hz; startup-only,
+positive and at most 10000 Hz). It sends nothing before the first valid input.
+Invalid inputs leave the last valid batch intact. A partial batch replaces the
+cached batch; omitted motors retain their references in the EtherCAT bridge.
+Gain service updates take effect on the next publication, respecting `gain_mask`.
+
+Stopping an upstream controller leaves its last position/velocity command
+active. In particular, a nonzero velocity is repeated until replaced or motors
+are explicitly stopped. The bridge watchdog now detects loss of the converter
+output, not loss of its upstream controller. Stop the motors explicitly to end
+operation; stopping the converter triggers the bridge watchdog after its timeout.
+
+
+Grouped launch topic paths: `<robot>/controllers/joint_commands` for joint
+commands and `<robot>/inputs/selected_joint` for input selection. The panel
+uses the grouped command topic. Actions and power services keep their existing
+robot-level paths. Standalone nodes use relative topics; apply equivalent
+remappings when running them outside the supplied launch files.

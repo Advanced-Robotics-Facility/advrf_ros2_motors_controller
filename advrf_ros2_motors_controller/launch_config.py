@@ -117,6 +117,21 @@ def ecat_remappings(namespace):
             for name in ('rx/joint_states', 'rx/motors', 'tx/motors', 'replCmd')]
 
 
+def grouped_namespace(namespace, group):
+    return '/' + '/'.join(filter(None, (namespace.strip('/'), group)))
+
+
+def robot_remappings(namespace):
+    """Resolve public interfaces under their functional namespace."""
+    prefix = namespace.rstrip('/')
+    return [('joint_commands', grouped_namespace(namespace, 'controllers') + '/joint_commands'),
+            ('selected_joint', grouped_namespace(namespace, 'inputs') + '/selected_joint')] + [
+        (name, prefix + '/' + name) for name in (
+        'start_motors', 'stop_motors',
+        'motor_power_request', 'set_trajectory_enabled', 'go_to_joint_positions',
+        'advrf_motors_controller/follow_joint_trajectory')]
+
+
 def config_argument(context, name):
     return LaunchConfiguration(name, default=EnvironmentVariable(name.upper(), default_value='')).perform(context)
 
@@ -205,7 +220,9 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
             LaunchConfiguration('ecat_namespace', default='').perform(context),
             config_argument(context, 'ec_cfg'),
             LaunchConfiguration('namespace').perform(context))
-        remappings = ecat_remappings(transport_namespace)
+        robot_namespace = LaunchConfiguration('namespace').perform(context)
+        remappings = ecat_remappings(transport_namespace) + robot_remappings(robot_namespace)
+        node_namespace = grouped_namespace(robot_namespace, 'hardware' if motor_power else 'controllers')
         joint_limits, id_map = resolve_paths(
             LaunchConfiguration('joint_limits').perform(context),
             LaunchConfiguration('robot_id_map').perform(context),
@@ -270,7 +287,7 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
         nodes = [Node(
             package='advrf_ros2_motors_controller',
             executable=executable,
-            namespace=LaunchConfiguration('namespace'),
+            namespace=node_namespace,
             output='screen',
             remappings=remappings,
             parameters=parameters,
@@ -279,7 +296,7 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
             nodes.append(Node(
                 package='advrf_ros2_motors_controller',
                 executable='joint_trajectory_controller_node',
-                namespace=LaunchConfiguration('namespace'),
+                namespace=node_namespace,
                 output='screen',
                 remappings=remappings,
                 parameters=shared_files + [{'robot_id_map': id_map}],
@@ -289,8 +306,8 @@ def controller_launch(config_name, executable, with_trajectory_controller=False,
             # The downstream converter has one input and no source-selection logic.
             nodes.append(Node(
                 package='advrf_ros2_motors_controller',
-                executable='joint_command_controller_node',
-                namespace=LaunchConfiguration('namespace'),
+                executable='converter_tx_motor_node',
+                namespace=node_namespace,
                 output='screen',
                 remappings=remappings,
                 parameters=[entry for entry in shared_files

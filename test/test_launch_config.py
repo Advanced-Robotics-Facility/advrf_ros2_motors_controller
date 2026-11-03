@@ -177,7 +177,7 @@ class LaunchConfigTest(unittest.TestCase):
                         'start_trajectory_controller': start,
                     })
                     description = controller_launch(
-                        'trajectory_config', 'joint_go_to_node', with_trajectory_controller=True,
+                        'trajectory_config', 'joint_goal_manager_node', with_trajectory_controller=True,
                     )
                     for entity in description.entities:
                         if isinstance(entity, DeclareLaunchArgument):
@@ -187,7 +187,7 @@ class LaunchConfigTest(unittest.TestCase):
                     nodes = callback.execute(context)
                     self.assertEqual(len(nodes), 3)
                     self.assertEqual(nodes[2].node_executable,
-                                     'joint_command_controller_node')
+                                     'converter_tx_motor_node')
                     self.assertTrue(nodes[2].condition.evaluate(context))
                     context.launch_configurations['start_joint_controller'] = 'false'
                     self.assertFalse(nodes[2].condition.evaluate(context))
@@ -219,7 +219,7 @@ class LaunchConfigTest(unittest.TestCase):
                     if auto_start:
                         context.launch_configurations['auto_start_motors'] = 'true'
                     description = controller_launch(
-                        'joint_limits', 'motor_power_node', motor_power=True,
+                        'joint_limits', 'motor_power_manager_node', motor_power=True,
                     )
                     for entity in description.entities:
                         if isinstance(entity, DeclareLaunchArgument):
@@ -251,7 +251,7 @@ class LaunchConfigTest(unittest.TestCase):
                 })
                 context.launch_configurations.update(extra or {})
                 description = controller_launch(
-                    'trajectory_config', 'joint_go_to_node', with_trajectory_controller=True,
+                    'trajectory_config', 'joint_goal_manager_node', with_trajectory_controller=True,
                 )
                 for entity in description.entities:
                     if isinstance(entity, DeclareLaunchArgument):

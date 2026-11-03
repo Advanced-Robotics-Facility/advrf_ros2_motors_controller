@@ -58,7 +58,7 @@ class PanelTest(unittest.TestCase):
                 return response
             return callback
         fake.create_service(SetBool, namespace + '/set_trajectory_enabled', mode_callback(0))
-        direct_subscription = fake.create_subscription(JointState, namespace + '/joint_commands', commands.append, 10)
+        direct_subscription = fake.create_subscription(JointState, namespace + '/controllers/joint_commands', commands.append, 10)
         def power(command):
             def callback(request, response):
                 calls.append(command)
@@ -176,7 +176,7 @@ class PanelTest(unittest.TestCase):
             fake.destroy_subscription(direct_subscription)
             wait(lambda: panel.command_publisher.get_subscription_count() == 0)
             timer = fake.create_timer(0.05, lambda: publisher.publish(message))
-            direct_subscription = fake.create_subscription(JointState, namespace + '/joint_commands', commands.append, 10)
+            direct_subscription = fake.create_subscription(JointState, namespace + '/controllers/joint_commands', commands.append, 10)
             panel.mode.setCurrentIndex(0)
             wait(lambda: panel.mode_ready and panel.go.isEnabled())
             self.assertEqual(panel.motion_status.text(), 'GoTo: ready')

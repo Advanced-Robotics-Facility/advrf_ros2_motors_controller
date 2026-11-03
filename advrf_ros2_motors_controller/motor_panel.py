@@ -234,7 +234,7 @@ class MotorPanel(Plugin):
         self.action = ActionClient(self.node, GoToJointPositions, self.endpoint('go_to_joint_positions'))
         self.clients = [self.node.create_client(Trigger, self.endpoint(name))
                         for name in ('start_motors', 'stop_motors')]
-        self.command_publisher = self.node.create_publisher(JointState, self.endpoint('joint_commands'), 1)
+        self.command_publisher = self.node.create_publisher(JointState, self.endpoint('controllers/joint_commands'), 1)
         self.mode_clients = [self.node.create_client(SetBool, self.endpoint(name))
                              for name in ('set_trajectory_enabled',)]
         self.note(f'Connected to {self.endpoint("")} ; waiting for feedback. Motors are never started automatically.')

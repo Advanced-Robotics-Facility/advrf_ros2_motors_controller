@@ -50,7 +50,7 @@ class MotorPowerTest(unittest.TestCase):
             start = node.create_client(Trigger, 'start_motors')
             stop = node.create_client(Trigger, 'stop_motors')
             single = node.create_client(MotorPowerRequest, 'motor_power_request')
-            parameters = AsyncParameterClient(node, '/power_test/motor_power_node')
+            parameters = AsyncParameterClient(node, '/power_test/motor_power_manager_node')
             process = None
 
             def spin(duration):

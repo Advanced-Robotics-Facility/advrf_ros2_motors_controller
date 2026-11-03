@@ -46,6 +46,8 @@ class ActionTest(unittest.TestCase):
             pub = node.create_publisher(JointState, 'rx/joint_states', 10)
             positions = {7: 0.0, 2: 0.0}
             received = []
+            upstream_commands = []
+            upstream_sub = node.create_subscription(JointState, 'joint_commands', upstream_commands.append, 10)
             feedback = []
             mode = node.create_client(SetBool, 'set_trajectory_enabled')
             follow = [True]
@@ -127,16 +129,16 @@ class ActionTest(unittest.TestCase):
                 self.assertTrue(mode.wait_for_service(timeout_sec=3))
                 endpoints = node.get_publishers_info_by_topic('tx/motors')
                 self.assertEqual([endpoint.node_name for endpoint in endpoints],
-                                 ['joint_command_controller_node'])
+                                 ['converter_tx_motor_node'])
                 self.assertTrue(wait(mode.call_async(SetBool.Request(data=False))).success)
                 spin(0.1)
-                count = len(received)
+                count = len(upstream_commands)
                 spin(0.15)
-                self.assertEqual(len(received), count, 'Disabled trajectory hold published')
+                self.assertEqual(len(upstream_commands), count, 'Disabled trajectory hold published')
                 self.assertFalse(wait(client.send_goal_async(goal(0.2))).accepted)
                 self.assertTrue(wait(mode.call_async(SetBool.Request(data=True))).success)
                 spin(0.15)
-                self.assertEqual(len(received), count, 'Old hold resumed after mode change')
+                self.assertEqual(len(upstream_commands), count, 'Old hold resumed after mode change')
                 self.assertFalse(wait(client.send_goal_async(goal(9))).accepted)
                 old = goal(0.2)
                 old.trajectory.header.stamp.sec = node.get_clock().now().seconds_nanoseconds()[0] - 1
