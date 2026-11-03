@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import os
-from advrf_ros2_motors_controller.launch_config import resolve_ecat_namespace, ecat_remappings, resolve_motor_profile, robot_reference, ros2_folder
+from advrf_ros2_motors_controller.launch_config import resolve_ecat_namespace, ecat_remappings, resolve_motor_profile, robot_reference, ros2_folder, grouped_namespace, robot_remappings
 
 class EcatNamespaceTest(unittest.TestCase):
     def test_separate_namespaces_and_explicit_override(self):
@@ -59,6 +59,19 @@ class EcatNamespaceTest(unittest.TestCase):
             config.write_text('ros2: {namespace: /advrf/miranda}\n'
                               'advrf_ros2_ecat: {namespace: /custom/transport}\n')
             self.assertEqual(resolve_ecat_namespace(ec_cfg=str(config)), '/custom/transport')
+
+    def test_grouped_nodes_keep_robot_interfaces(self):
+        self.assertEqual(grouped_namespace('/advrf/bench/', 'controllers'),
+                         '/advrf/bench/controllers')
+        self.assertEqual(grouped_namespace('/', 'inputs'), '/inputs')
+        mappings = dict(robot_remappings('/advrf/bench'))
+        for name in ('motor_power_request', 'start_motors',
+                     'stop_motors', 'go_to_joint_positions', 'set_trajectory_enabled',
+                     'advrf_motors_controller/follow_joint_trajectory'):
+            self.assertEqual(mappings[name], '/advrf/bench/' + name)
+        self.assertEqual(mappings['joint_commands'], '/advrf/bench/controllers/joint_commands')
+        self.assertEqual(mappings['selected_joint'], '/advrf/bench/inputs/selected_joint')
+        self.assertEqual(dict(robot_remappings('/'))['joint_commands'], '/controllers/joint_commands')
 
     def test_invalid_namespace(self):
         with self.assertRaises(Exception):

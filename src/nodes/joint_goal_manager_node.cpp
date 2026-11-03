@@ -18,7 +18,7 @@ class JointGoTo : public rclcpp::Node
   using Clock = std::chrono::steady_clock;
 
 public:
-  JointGoTo() : Node("joint_go_to_node")
+  JointGoTo() : Node("joint_goal_manager_node")
   {
     config_ = ControllerConfig::declare(*this, false);
     feedback_timeout_ = declare_parameter("feedback_timeout", 0.2);
@@ -322,7 +322,7 @@ int main(int argc, char **argv)
   }
   catch (const std::exception &error)
   {
-    RCLCPP_FATAL(rclcpp::get_logger("joint_go_to_node"), "%s", error.what());
+    RCLCPP_FATAL(rclcpp::get_logger("joint_goal_manager_node"), "%s", error.what());
     rclcpp::shutdown();
     return 1;
   }

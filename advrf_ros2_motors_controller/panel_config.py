@@ -55,8 +55,9 @@ def load_parameters(path, namespace=''):
     if 'joint_limits' in document:
         return moveit_parameters(document, path)
     params = {}
-    full_name = '/' + '/'.join(filter(None, [namespace.strip('/'), 'joint_go_to_node']))
-    for key in ('/**', '/**/joint_go_to_node', 'joint_go_to_node', full_name):
+    full_name = '/' + '/'.join(filter(None, [namespace.strip('/'), 'joint_goal_manager_node']))
+    grouped_name = '/' + '/'.join(filter(None, [namespace.strip('/'), 'controllers', 'joint_goal_manager_node']))
+    for key in ('/**', '/**/joint_goal_manager_node', 'joint_goal_manager_node', full_name, grouped_name):
         block = document.get(key, {})
         params.update(block.get('ros__parameters', {}))
     return params

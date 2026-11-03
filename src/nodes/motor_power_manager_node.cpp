@@ -17,7 +17,7 @@ class MotorPowerNode : public rclcpp::Node
   using ServiceMotorPowerRequest = rclcpp::Service<advrf_ros2_interfaces::srv::MotorPowerRequest>;
 
 public:
-  MotorPowerNode() : Node("motor_power_node")
+  MotorPowerNode() : Node("motor_power_manager_node")
   {
     const auto joints = declare_parameter<std::vector<std::string>>("joints", std::vector<std::string>{});
     const auto map_path = declare_parameter<std::string>("robot_id_map", "");
@@ -150,7 +150,7 @@ private:
       }
       catch (const std::exception &error)
       {
-        RCLCPP_ERROR(rclcpp::get_logger("motor_power_node"), "Service reply failed: %s",
+        RCLCPP_ERROR(rclcpp::get_logger("motor_power_manager_node"), "Service reply failed: %s",
                      error.what());
       }
     };
@@ -248,7 +248,7 @@ int main(int argc, char **argv)
   }
   catch (const std::exception &error)
   {
-    RCLCPP_FATAL(rclcpp::get_logger("motor_power_node"), "%s", error.what());
+    RCLCPP_FATAL(rclcpp::get_logger("motor_power_manager_node"), "%s", error.what());
     rclcpp::shutdown();
     return 1;
   }
