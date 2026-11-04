@@ -22,7 +22,10 @@ def setup(context):
         actions.append(Node(package='robot_state_publisher', executable='robot_state_publisher',
                             namespace=namespace, output='screen',
                             parameters=[{'robot_description': robot['description']}],
-                            remappings=[('joint_states', transport.rstrip('/') + '/rx/joint_states')]))
+                            remappings=[
+                                ('joint_states', transport.rstrip('/') + '/rx/joint_states'),
+                                ('robot_description', '/robot_description'),
+                            ]))
     if enabled('use_rviz'):
         rviz = value('rviz_config') or str(robot['root'] / 'rviz' / 'miranda.rviz')
         if not robot['description']:

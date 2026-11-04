@@ -289,7 +289,8 @@ class MotorPanel(Plugin):
         self.command_publisher = self.node.create_publisher(JointState, self.endpoint('controllers/joint_commands'), 1)
         self.mode_clients = [self.node.create_client(SetBool, self.endpoint(name))
                              for name in ('set_trajectory_enabled',)]
-        self.note(f'Connected to {self.endpoint("")} ; waiting for feedback. Motors are never started automatically.')
+        self.note(f'Connected to {self.endpoint("")} ; waiting for feedback. '
+                  'The first valid motor command starts the motors.')
         self.refresh()
 
     def receive(self, packet):
