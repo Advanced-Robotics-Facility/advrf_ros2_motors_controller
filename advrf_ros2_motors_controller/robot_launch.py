@@ -2,8 +2,8 @@
 from launch.actions import ExecuteProcess
 from launch_ros.actions import Node
 from .launch_config import ecat_remappings, robot_remappings
-
-
+ 
+ 
 def stack_nodes(robot, namespace, transport, panel=True, bridge=False, joy=False):
     from .robot_config import node_parameters
     actions = []
@@ -45,10 +45,18 @@ def stack_nodes(robot, namespace, transport, panel=True, bridge=False, joy=False
         for package, executable, configured_node in nodes:
             parameters = node_parameters(path, configured_node, namespace)
             if executable == 'manual_joint_controller_node':
-                parameters.update(joints=robot['limits']['joints'],
-                                  lower_positions=robot['limits']['position_lower'],
-                                  upper_positions=robot['limits']['position_upper'])
+                limits = robot['limits']
+                joints = parameters.get('joints', limits['joints'])
+                if not isinstance(joints, list) or not joints or any(
+                        joint not in limits['joints'] for joint in joints) or len(set(joints)) != len(joints):
+                    raise ValueError('joint_control.yaml: joints must be a nonempty list of unique robot joints')
+                indices = [limits['joints'].index(joint) for joint in joints]
+                parameters.update(joints=joints,
+                                  lower_positions=[limits['position_lower'][i] for i in indices],
+                                  upper_positions=[limits['position_upper'][i] for i in indices])
             actions.append(Node(package=package, executable=executable, namespace=namespace,
                                 output='screen', parameters=[parameters],
                                 remappings=ecat_remappings(transport) + robot_remappings(namespace)))
     return actions
+ 
+ 
