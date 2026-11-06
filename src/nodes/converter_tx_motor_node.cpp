@@ -41,7 +41,7 @@ public:
           return result;
         });
     gains_service_ = create_service<advrf_ros2_interfaces::srv::SetJointGains>(
-        "~/set_joint_gains",
+        "set_joint_gains",
         [this](const std::shared_ptr<advrf_ros2_interfaces::srv::SetJointGains::Request> request,
                std::shared_ptr<advrf_ros2_interfaces::srv::SetJointGains::Response> response)
         {

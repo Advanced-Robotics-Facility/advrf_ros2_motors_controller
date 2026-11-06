@@ -48,18 +48,13 @@ target_link_libraries(joint_goal_manager_node motors_controller_common)
 target_compile_options(joint_goal_manager_node PRIVATE -Wall -Wextra -Wpedantic)
 ament_target_dependencies(joint_goal_manager_node rclcpp rclcpp_action control_msgs sensor_msgs advrf_ros2_interfaces)
 
-add_executable(motor_power_manager_node src/nodes/motor_power_manager_node.cpp)
-target_link_libraries(motor_power_manager_node motors_controller_common)
-target_compile_options(motor_power_manager_node PRIVATE -Wall -Wextra -Wpedantic)
-ament_target_dependencies(motor_power_manager_node rclcpp std_srvs advrf_ros2_interfaces)
-
-install(TARGETS motor_power_manager_node joint_trajectory_controller_node converter_tx_motor_node joint_goal_manager_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS joint_trajectory_controller_node converter_tx_motor_node joint_goal_manager_node DESTINATION lib/${PROJECT_NAME})
 
 install(TARGETS motors_controller_common motors_controller_math EXPORT export_motors_controller_common
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
 install(DIRECTORY include/ DESTINATION include)
 install(PROGRAMS scripts/robot_config_node scripts/test_joint_trajectory DESTINATION lib/${PROJECT_NAME})
-install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 install(FILES README.md plugin.xml DESTINATION share/${PROJECT_NAME})
 ament_export_targets(export_motors_controller_common HAS_LIBRARY_TARGET)
 ament_export_dependencies(yaml-cpp rclcpp rclcpp_action control_msgs trajectory_msgs sensor_msgs builtin_interfaces advrf_ros2_interfaces)
@@ -101,11 +96,6 @@ if(BUILD_TESTING)
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_motor_panel.py"
     ENV "ROS_DOMAIN_ID=218" "ROS_LOCALHOST_ONLY=1" "QT_QPA_PLATFORM=offscreen"
       "ROS_LOG_DIR=/tmp/advrf_panel_test_logs" "ROS_HOME=/tmp/advrf_panel_test_ros"
-    GENERATE_RESULT_FOR_RETURN_CODE_ZERO
-    TIMEOUT 30)
-  ament_add_test(test_motor_power
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_motor_power.py"
-      "$<TARGET_FILE:motor_power_manager_node>"
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO
     TIMEOUT 30)
   ament_add_test(test_action

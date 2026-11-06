@@ -100,15 +100,6 @@ class PanelTest(unittest.TestCase):
             return callback
         fake.create_service(SetBool, namespace + '/set_trajectory_enabled', mode_callback(0))
         direct_subscription = fake.create_subscription(JointState, namespace + '/controllers/joint_commands', commands.append, 10)
-        def power(command):
-            def callback(request, response):
-                calls.append(command)
-                response.success = True
-                response.message = command + ' simulated'
-                return response
-            return callback
-        fake.create_service(Trigger, namespace + '/start_motors', power('start'))
-        fake.create_service(Trigger, namespace + '/stop_motors', power('stop'))
         def execute(handle):
             goals.append(handle.request)
             for _ in range(30):
@@ -147,15 +138,13 @@ class PanelTest(unittest.TestCase):
         timer = fake.create_timer(0.05, lambda: publisher.publish(message))
         try:
             self.assertFalse(panel.go.isEnabled())
-            wait(lambda: panel.go.isEnabled() and panel.start.isEnabled())
+            wait(lambda: panel.go.isEnabled())
             self.assertTrue(all(spin.value() == 0.2 for _, spin, _ in panel.rows))
             self.assertEqual(calls, [])
             self.assertEqual(goals, [])
             panel.rows[0][1].setValue(0.3)
             app.processEvents()
             self.assertEqual(goals, [])  # Editing targets never commands motion.
-            panel.start.click()
-            wait(lambda: calls == ['start'] and not panel.power_busy)
             panel.go.click()
             wait(lambda: not panel.busy)
             self.assertEqual(goals[0].positions[0], 0.3)
@@ -164,9 +153,9 @@ class PanelTest(unittest.TestCase):
             self.assertAlmostEqual(panel.rows[0][1].value(), 0.2)
             panel.go.click()
             wait(lambda: panel.handle is not None)
-            panel.stop.click()
-            wait(lambda: not panel.busy and not panel.power_busy and not panel.stopping)
-            self.assertEqual(calls, ['start', 'stop'])
+            panel.cancel.click()
+            wait(lambda: not panel.busy)
+            self.assertEqual(calls, [])
             self.assertIn('Cancelled', panel.log.toPlainText())
             # Continuous mode only commands checked joints, with a velocity cap.
             panel.mode.setCurrentIndex(1)
@@ -190,7 +179,7 @@ class PanelTest(unittest.TestCase):
                 self.assertLessEqual(current.position[0] - previous.position[0], 0.1 * elapsed + 0.002)
             panel.stream.click()
             self.assertFalse(panel.streaming)
-            self.assertEqual(calls, ['start', 'stop'])  # Stopping stream does not send motor STOP.
+            self.assertEqual(calls, [])  # Stopping stream does not send motor STOP.
             # Returning to GoTo enables trajectory only after direct streaming stops.
             panel.mode.setCurrentIndex(0)
             wait(lambda: panel.mode_ready and panel.go.isEnabled())
@@ -208,8 +197,6 @@ class PanelTest(unittest.TestCase):
             fake.destroy_timer(timer)
             wait(lambda: not panel.streaming)
             self.assertFalse(panel.streaming)
-            self.assertFalse(panel.start.isEnabled())
-            self.assertTrue(panel.stop.isEnabled())
             with self.assertRaises(ValueError):
                 measured_positions(['a', 'a'], [0., 0.], [('a', -1, 1)])
             self.assertIn('feedback missing', panel.motion_status.text())

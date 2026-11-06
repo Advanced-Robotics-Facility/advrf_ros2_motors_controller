@@ -35,13 +35,13 @@ class JointCommandTest(unittest.TestCase):
     joint_gains: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
 ''')
             rclpy.init()
-            node = rclpy.create_node('joint_command_test')
+            node = rclpy.create_node('joint_command_test', namespace='/advrf/test_robot')
             pub = node.create_publisher(JointState, 'joint_commands', 10)
             other_pub = node.create_publisher(JointState, 'joint_commands', 10)
             received = []
             sub = node.create_subscription(MotorTxPdoVector, 'tx/motors', received.append, 10)
             with open(Path(tmp) / 'node.log', 'w+') as log:
-                process = subprocess.Popen([sys.argv[1], '--ros-args', '--params-file', str(config)], stdout=log, stderr=log)
+                process = subprocess.Popen([sys.argv[1], '--ros-args', '--params-file', str(config), '-r', '__ns:=/advrf/test_robot'], stdout=log, stderr=log)
 
                 def spin(seconds):
                     end = time.monotonic() + seconds
@@ -88,7 +88,7 @@ class JointCommandTest(unittest.TestCase):
                     self.assertAlmostEqual(received[-1].data[0].pos_ref, 0.6)
                     self.assertEqual(received[-1].data[0].gain_4, 10.0)
                     self.assertEqual(node.count_publishers('tx/motors'), 1)
-                    client = node.create_client(SetJointGains, '/converter_tx_motor_node/set_joint_gains')
+                    client = node.create_client(SetJointGains, '/advrf/test_robot/set_joint_gains')
                     self.assertTrue(client.wait_for_service(timeout_sec=5.0))
 
                     def set_gains(joint, values):
@@ -116,7 +116,7 @@ class JointCommandTest(unittest.TestCase):
                     self.assertEqual(
                         [getattr(received[-1].data[1], f'gain_{i}') for i in range(5)],
                         [11., 12., 13., 14., 15.])
-                    parameters = node.create_client(SetParameters, '/converter_tx_motor_node/set_parameters')
+                    parameters = node.create_client(SetParameters, '/advrf/test_robot/converter_tx_motor_node/set_parameters')
                     self.assertTrue(parameters.wait_for_service(timeout_sec=5.0))
 
                     def set_mask(values):
