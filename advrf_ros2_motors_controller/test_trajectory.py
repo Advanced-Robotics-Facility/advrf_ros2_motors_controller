@@ -93,8 +93,7 @@ class TrajectoryTest(Node):
     def __init__(self, args):
         from .ros_names import resolve_namespace, resolve_ecat_namespace
         namespace = resolve_namespace(args.namespace)
-        transport_namespace = resolve_ecat_namespace(
-            getattr(args, 'ecat_namespace', None), namespace)
+        transport_namespace = resolve_ecat_namespace(namespace)
         super().__init__(NODE_NAME, namespace=namespace)
 
         parameter_node = args.parameter_node or namespace.rstrip('/') + '/joint_trajectory_controller_node'
@@ -291,7 +290,6 @@ def parse_arguments():
     )
     parser.add_argument('--parameter-node', default='')
     parser.add_argument('--namespace', default=None)
-    parser.add_argument('--ecat-namespace', default=None)
     parser.add_argument('--action', default=DEFAULT_TRAJECTORY_ACTION)
     parser.add_argument('--timeout', type=float, default=5.0)
 

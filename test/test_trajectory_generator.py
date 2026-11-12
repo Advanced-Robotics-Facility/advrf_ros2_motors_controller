@@ -45,7 +45,7 @@ class GeneratorTest(unittest.TestCase):
             fake = rclpy.create_node('generator_fake_motors', namespace='/sweep_test')
             positions = [0.3, 0.6]
             received = []
-            publisher = fake.create_publisher(JointState, 'rx/joint_states', 10)
+            publisher = fake.create_publisher(JointState, 'ecat/rx/joint_states', 10)
             def command(message):
                 received.append(message)
                 for motor in message.data:
@@ -58,11 +58,11 @@ class GeneratorTest(unittest.TestCase):
             thread.start()
             with open(root / 'controller.log', 'w+') as log:
                 controller = subprocess.Popen([sys.argv[1], '--ros-args', '--params-file', str(config),
-                    '-r', '__ns:=/sweep_test'], stdout=log, stderr=log)
+                    '-r', '__ns:=/sweep_test', '-r', 'rx/joint_states:=ecat/rx/joint_states'], stdout=log, stderr=log)
                 output_process = subprocess.Popen([sys.argv[3], '--ros-args', '--params-file', str(config),
-                    '-r', '__ns:=/sweep_test'], stdout=log, stderr=log)
+                    '-r', '__ns:=/sweep_test', '-r', 'rx/joint_states:=ecat/rx/joint_states'], stdout=log, stderr=log)
                 client = None
-                base = [sys.argv[2], '--namespace', '/sweep_test', '--ecat-namespace', '/sweep_test', '--parameter-node', '/sweep_test/joint_trajectory_controller_node',
+                base = [sys.argv[2], '--namespace', '/sweep_test', '--parameter-node', '/sweep_test/joint_trajectory_controller_node',
                         '--joint', 'a', '--min', '-0.1', '--max', '0.1', '--duration', '1']
                 try:
                     unavailable = subprocess.run(

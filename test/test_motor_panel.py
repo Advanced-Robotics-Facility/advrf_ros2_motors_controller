@@ -51,8 +51,7 @@ class PanelTest(unittest.TestCase):
             node = ui
             def argv(self):
                 return ['--parameter-node', '/parameter_test/joint_go_to_node',
-                        '--namespace', '/parameter_test',
-                        '--ecat-namespace', '/parameter_test/ecat']
+                        '--namespace', '/parameter_test']
             def add_widget(self, widget):
                 pass
 
@@ -117,12 +116,11 @@ class PanelTest(unittest.TestCase):
             return GoToJointPositions.Result(error_code=0, message='Reached')
         server = ActionServer(fake, GoToJointPositions, namespace + '/go_to_joint_positions',
             execute_callback=execute, cancel_callback=lambda goal: CancelResponse.ACCEPT)
-        publisher = fake.create_publisher(JointState, namespace + '/rx/joint_states', 10)
+        publisher = fake.create_publisher(JointState, namespace + '/ecat/rx/joint_states', 10)
         class Context(QObject):
             node = ui
             def argv(self):
-                return ['--parameter-node', '/panel_test_backend', '--namespace', namespace,
-                        '--ecat-namespace', namespace]
+                return ['--parameter-node', '/panel_test_backend', '--namespace', namespace]
             def add_widget(self, widget):
                 widget.show()
         context = Context()

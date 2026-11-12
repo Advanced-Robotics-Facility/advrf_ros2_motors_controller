@@ -11,7 +11,7 @@ class EcatNamespaceTest(unittest.TestCase):
         self.assertEqual(resolve_namespace(), '/advrf/robot')
         self.assertEqual(resolve_namespace('/'), '/')
         self.assertEqual(resolve_ecat_namespace(namespace='/robot'), '/robot/ecat')
-        self.assertEqual(resolve_ecat_namespace('/custom', '/robot'), '/custom')
+        self.assertEqual(resolve_ecat_namespace('/custom/'), '/custom/ecat')
         self.assertEqual(resolve_ecat_namespace(namespace='/'), '/ecat')
 
     def test_invalid_namespace(self):

@@ -13,6 +13,6 @@ def resolve_namespace(explicit=None):
     return namespace
 
 
-def resolve_ecat_namespace(explicit=None, namespace=DEFAULT_ROBOT_NAMESPACE):
-    value = explicit or resolve_namespace(namespace).rstrip('/') + ECAT_NAMESPACE_SUFFIX
+def resolve_ecat_namespace(namespace=DEFAULT_ROBOT_NAMESPACE):
+    value = resolve_namespace(namespace).rstrip('/') + ECAT_NAMESPACE_SUFFIX
     return resolve_namespace(value)

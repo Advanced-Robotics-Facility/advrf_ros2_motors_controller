@@ -65,7 +65,6 @@ class MotorPanel(Plugin):
         parser = argparse.ArgumentParser()
         parser.add_argument('--parameter-node', default='')
         parser.add_argument('--namespace', default=None)
-        parser.add_argument('--ecat-namespace', default=None)
         args = parser.parse_args(context.argv())
         from .ros_names import resolve_namespace
         args.namespace = resolve_namespace(args.namespace)
@@ -73,7 +72,6 @@ class MotorPanel(Plugin):
         self.remote_limits = None
         self.parameter_future = None
         self.parameter_client = None
-        self.ecat_namespace_override = args.ecat_namespace
         self.widget = QWidget()
         self.widget.setObjectName('AdvrfMotorPanel')
         self.widget.setWindowTitle('ADVRF · Joint control')
@@ -277,8 +275,7 @@ class MotorPanel(Plugin):
         def state_callback(message):
             self.dispatch.state.emit((token, message, time.monotonic()))
         from .ros_names import resolve_ecat_namespace
-        transport_namespace = resolve_ecat_namespace(
-            self.ecat_namespace_override, self.robot_namespace)
+        transport_namespace = resolve_ecat_namespace(self.robot_namespace)
         feedback_topic = transport_namespace.rstrip('/') + '/' + JOINT_FEEDBACK_TOPIC
         self.subscription = self.node.create_subscription(
             JointState,
