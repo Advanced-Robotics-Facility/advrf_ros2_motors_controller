@@ -6,7 +6,6 @@ import os
 import threading
 import time
 import unittest
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 import rclpy
@@ -87,7 +86,14 @@ class PanelTest(unittest.TestCase):
         ui = rclpy.create_node('panel_test_ui')
         fake = rclpy.create_node('panel_test_backend')
         namespace = '/panel_test'
-        config = Path(__file__).resolve().parents[1] / 'config/joint_limits.yaml'
+        names = ['joint_' + str(index) for index in range(6)]
+        for name, value in [
+            ('joints', names),
+            ('position_lower', [-1.0] * 6),
+            ('position_upper', [1.0] * 6),
+            ('max_velocity', [1.0] * 6),
+        ]:
+            fake.declare_parameter(name, value)
         calls, goals, commands, switches = [], [], [], []
         mode_state = [True]
         def mode_callback(index):
@@ -115,7 +121,8 @@ class PanelTest(unittest.TestCase):
         class Context(QObject):
             node = ui
             def argv(self):
-                return ['--joint-limits', str(config), '--namespace', namespace]
+                return ['--parameter-node', '/panel_test_backend', '--namespace', namespace,
+                        '--ecat-namespace', namespace]
             def add_widget(self, widget):
                 widget.show()
         context = Context()
@@ -133,6 +140,7 @@ class PanelTest(unittest.TestCase):
                     return
                 time.sleep(0.01)
             self.fail('Timed out waiting for UI/ROS state: ' + panel.log.toPlainText())
+        wait(lambda: bool(panel.joints))
         names = [name for name, _, _ in panel.joints]
         message = JointState(name=list(reversed(names)), position=[0.2] * len(names))
         timer = fake.create_timer(0.05, lambda: publisher.publish(message))

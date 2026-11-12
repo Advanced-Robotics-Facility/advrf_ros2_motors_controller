@@ -2,7 +2,6 @@
 
 import argparse
 import math
-import os
 import sys
 import time
 
@@ -16,21 +15,31 @@ from control_msgs.action import FollowJointTrajectory
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
+from rcl_interfaces.srv import GetParameters
+
 from .panel_config import (
-    load_joints,
-    load_parameters,
+    GET_PARAMETERS_SERVICE,
+    TRAJECTORY_PARAMETER_NAMES,
+    decode_joint_parameters,
     measured_positions,
-    resolve_panel_config,
 )
+
+
+# ROS names are relative to the selected namespace unless they start with / or ~.
+JOINT_FEEDBACK_TOPIC = 'rx/joint_states'
+NODE_NAME = 'test_joint_trajectory'
+DEFAULT_TRAJECTORY_ACTION = 'advrf_motors_controller/follow_joint_trajectory'
 
 
 def segment(start, end, duration, rate):
     """Sample a quintic position profile with zero endpoint speed/acceleration."""
     finite = all(math.isfinite(value) for value in (start, end, duration, rate))
+
     if not finite or duration <= 0 or rate <= 0:
         raise ValueError('Finite positions, positive duration and rate are required')
 
     count = math.ceil(duration * rate)
+
     if count > 200000:
         raise ValueError('Too many trajectory points; reduce duration or rate')
 
@@ -82,19 +91,41 @@ def make_trajectory(names, actual, joint, targets, rate):
 
 class TrajectoryTest(Node):
     def __init__(self, args):
-        from .launch_config import resolve_namespace, resolve_ecat_namespace
-        namespace = resolve_namespace(args.namespace, os.environ.get('EC_CFG', ''))
+        from .ros_names import resolve_namespace, resolve_ecat_namespace
+        namespace = resolve_namespace(args.namespace)
         transport_namespace = resolve_ecat_namespace(
-            getattr(args, 'ecat_namespace', None), os.environ.get('EC_CFG', ''), namespace)
-        super().__init__('test_joint_trajectory', namespace=namespace)
+            getattr(args, 'ecat_namespace', None), namespace)
+        super().__init__(NODE_NAME, namespace=namespace)
 
-        config = resolve_panel_config(
-            args.joint_limits,
-            os.environ.get('EC_CFG', ''),
-            os.environ.get('ROS2_CFG', ''),
+        parameter_node = args.parameter_node or namespace.rstrip('/') + '/joint_trajectory_controller_node'
+        parameter_client = self.create_client(
+            GetParameters,
+            parameter_node.rstrip('/') + '/' + GET_PARAMETERS_SERVICE,
         )
-        self.joints = load_joints(config, self.get_namespace())
-        self.parameters = load_parameters(config, self.get_namespace())
+
+        try:
+            if not parameter_client.wait_for_service(timeout_sec=args.timeout):
+                raise RuntimeError(f'Parameter service unavailable: {parameter_node}')
+
+            request = GetParameters.Request(names=list(TRAJECTORY_PARAMETER_NAMES))
+            future = parameter_client.call_async(request)
+            rclpy.spin_until_future_complete(self, future, timeout_sec=args.timeout)
+
+            if not future.done():
+                raise RuntimeError(f'Parameter request timed out: {parameter_node}')
+
+            self.parameters = decode_joint_parameters(
+                future.result().values,
+                TRAJECTORY_PARAMETER_NAMES,
+            )
+        finally:
+            self.destroy_client(parameter_client)
+
+        self.joints = list(zip(
+            self.parameters['joints'],
+            self.parameters['position_lower'],
+            self.parameters['position_upper'],
+        ))
         self.names = [name for name, _, _ in self.joints]
 
         if args.joint not in self.names:
@@ -108,7 +139,7 @@ class TrajectoryTest(Node):
 
         self.subscription = self.create_subscription(
             JointState,
-            transport_namespace.rstrip('/') + '/rx/joint_states',
+            transport_namespace.rstrip('/') + '/' + JOINT_FEEDBACK_TOPIC,
             self.receive,
             qos_profile_sensor_data,
         )
@@ -132,9 +163,11 @@ class TrajectoryTest(Node):
 
         # Consume fresh traffic, including state updates after the previous result.
         received_before = self.received
+
         while self.received <= received_before or not self.fresh():
             if time.monotonic() >= end:
                 raise RuntimeError('No fresh complete joint feedback')
+
             rclpy.spin_once(self, timeout_sec=0.05)
 
         for value, (name, lo, hi) in zip(self.actual, self.joints):
@@ -158,6 +191,7 @@ class TrajectoryTest(Node):
 
         for key, peak in peaks.items():
             limits = self.parameters.get(key, [])
+
             if (
                 len(limits) != len(self.joints)
                 or not math.isfinite(limits[i])
@@ -175,6 +209,7 @@ class TrajectoryTest(Node):
 
         while not future.done():
             rclpy.spin_once(self, timeout_sec=0.05)
+
             if end and time.monotonic() >= end:
                 raise RuntimeError('Action response timeout; execution state may be unknown')
 
@@ -224,6 +259,7 @@ class TrajectoryTest(Node):
 
             if self.goal_handle and self.goal_handle.accepted:
                 result = self.wait(self.goal_handle.cancel_goal_async(), self.args.timeout)
+
                 if result.goals_canceling:
                     self.wait(self.goal_handle.get_result_async(), self.args.timeout)
                     self.get_logger().info('Trajectory cancelled. No motor STOP sent.')
@@ -253,13 +289,14 @@ def parse_arguments():
         default=1,
         help='Number of min -> max -> min cycles; 0 means infinite',
     )
-    parser.add_argument('--joint-limits', default='')
+    parser.add_argument('--parameter-node', default='')
     parser.add_argument('--namespace', default=None)
     parser.add_argument('--ecat-namespace', default=None)
-    parser.add_argument('--action', default='advrf_motors_controller/follow_joint_trajectory')
+    parser.add_argument('--action', default=DEFAULT_TRAJECTORY_ACTION)
     parser.add_argument('--timeout', type=float, default=5.0)
 
     args = parser.parse_args(remove_ros_args(sys.argv)[1:])
+
     if args.approach_duration is None:
         args.approach_duration = args.duration
 
@@ -271,6 +308,7 @@ def parse_arguments():
         args.rate,
         args.timeout,
     ]
+
     if (
         not all(math.isfinite(value) for value in numeric_values)
         or min(args.duration, args.approach_duration, args.rate, args.timeout) <= 0
@@ -300,6 +338,7 @@ def run_sequence(node, args):
     node.execute([(args.minimum, args.approach_duration)])
 
     cycle = 0
+
     while args.repeat == 0 or cycle < args.repeat:
         node.execute([
             (args.maximum, args.duration),
@@ -321,12 +360,14 @@ def main():
 
     except KeyboardInterrupt:
         code = 130
+
         if node:
             node.cancel()
 
     except Exception as error:
         print(f'Trajectory test failed: {error}', file=sys.stderr)
         code = 1
+
         if node:
             node.cancel()
 
@@ -334,6 +375,7 @@ def main():
         if node:
             node.client.destroy()
             node.destroy_node()
+
         rclpy.shutdown()
 
     return code

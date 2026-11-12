@@ -16,14 +16,8 @@ ControllerConfig ControllerConfig::declare(rclcpp::Node &node, bool with_motors)
     if (mode != "position" && mode != "velocity" && mode != "impedance" &&
         mode != "torque" && mode != "current")
       throw std::invalid_argument("Unknown control_mode");
-    const auto id_map = node.declare_parameter<std::string>("robot_id_map", "");
     const auto ids = node.declare_parameter<std::vector<int64_t>>("motor_ids", std::vector<int64_t>{});
-    if (id_map.empty() && ids.empty())
-    {
-      throw std::invalid_argument("Provide motor_ids or robot_id_map pointing to an ID-map YAML file");
-    }
-    config.motors = ids.empty() ? MotorsDefinition::load(id_map, config.joints)
-                                : MotorsDefinition::from_ids(ids, config.joints);
+    config.motors = MotorsDefinition::from_ids(ids, config.joints);
   }
   config.lower = node.declare_parameter<std::vector<double>>("position_lower", std::vector<double>{});
   config.upper = node.declare_parameter<std::vector<double>>("position_upper", std::vector<double>{});

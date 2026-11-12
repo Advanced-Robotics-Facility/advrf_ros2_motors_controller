@@ -1,9 +1,0 @@
-# Overrides applied after joint_limits.yaml.
-/**:
-  ros__parameters:
-    update_rate: 250.0
-    feedback_timeout: 0.2
-    path_tolerance: 0.1
-    goal_tolerance: 0.02
-    goal_time_tolerance: 2.0
-    action_name: advrf_motors_controller/follow_joint_trajectory

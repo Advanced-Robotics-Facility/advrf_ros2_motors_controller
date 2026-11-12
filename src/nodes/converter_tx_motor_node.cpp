@@ -17,12 +17,15 @@ public:
     rcl_interfaces::msg::ParameterDescriptor rate_descriptor;
     rate_descriptor.read_only = true;
     const double publish_rate = declare_parameter("publish_rate", 250.0, rate_descriptor);
+    
     if (!std::isfinite(publish_rate) || publish_rate <= 0 || publish_rate > 10000)
       throw std::invalid_argument("publish_rate must be finite and in (0, 10000] Hz");
     const auto mask = declare_parameter<std::vector<bool>>(
         "gain_mask", {true, true, true, true, true});
+    
     if (mask.size() != 5)
       throw std::invalid_argument("gain_mask must contain exactly five booleans");
+
     mask_callback_ = add_on_set_parameters_callback(
         [](const std::vector<rclcpp::Parameter> &parameters)
         {
@@ -40,6 +43,7 @@ public:
           }
           return result;
         });
+
     gains_service_ = create_service<advrf_ros2_interfaces::srv::SetJointGains>(
         "set_joint_gains",
         [this](const std::shared_ptr<advrf_ros2_interfaces::srv::SetJointGains::Request> request,
@@ -72,8 +76,8 @@ public:
           }
         });
 
-    publisher_ = create_publisher<advrf_ros2_interfaces::msg::MotorTxPdoVector>("tx/motors", declare_command_qos(*this));
-    subscription_ = create_subscription<sensor_msgs::msg::JointState>("joint_commands", rclcpp::QoS(1).reliable().durability_volatile(),
+    publisher_tx_motors_ = create_publisher<advrf_ros2_interfaces::msg::MotorTxPdoVector>("tx/motors", declare_command_qos(*this));
+    subscription_joint_state_ = create_subscription<sensor_msgs::msg::JointState>("joint_commands", rclcpp::QoS(1).reliable().durability_volatile(),
         [this](sensor_msgs::msg::JointState::ConstSharedPtr message)
         {
           forward(*message);
@@ -83,7 +87,7 @@ public:
         std::chrono::duration<double>(1.0 / publish_rate), [this]()
         {
           if (last_command_)
-            publisher_->publish(middleware_msgs::from_joint_state(
+            publisher_tx_motors_->publish(middleware_msgs::from_joint_state(
                 *last_command_, config_.motors, config_.gains));
         });
     RCLCPP_INFO(get_logger(), "JointState-to-motor converter ready (%zu motors, %.1f Hz)",
@@ -105,7 +109,7 @@ private:
       config_.check_indexed(point, joint_indices_, false);
       auto converted = middleware_msgs::from_joint_state(message, config_.motors, config_.gains);
       last_command_ = message;
-      publisher_->publish(converted);
+      publisher_tx_motors_->publish(converted);
     }
     catch (const std::exception &error)
     {
@@ -120,8 +124,8 @@ private:
   rclcpp::Service<advrf_ros2_interfaces::srv::SetJointGains>::SharedPtr gains_service_;
   std::vector<std::string> joint_names_;
   std::vector<size_t> joint_indices_;
-  rclcpp::Publisher<advrf_ros2_interfaces::msg::MotorTxPdoVector>::SharedPtr publisher_;
-  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr subscription_;
+  rclcpp::Publisher<advrf_ros2_interfaces::msg::MotorTxPdoVector>::SharedPtr publisher_tx_motors_;
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr subscription_joint_state_;
 };
 } // namespace advrf_ros2_motors_controller
 

@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include "advrf_ros2_motors_controller/repl_cmd_manager.hpp"
 #include "advrf_ros2_motors_controller/command.hpp"
 #include "advrf_ros2_motors_controller/trajectory_utils.hpp"
 #include "advrf_ros2_motors_controller/controller_config.hpp"
@@ -88,21 +87,6 @@ TEST(Motors, MappingAndCommands)
   p.positions[0] = INFINITY;
   EXPECT_THROW(middleware_msgs::from_trajectory_point({"a", "b"}, p, motors),
                std::invalid_argument);
-}
-
-TEST(Motors, MiddlewareYaml)
-{
-  const auto path = std::string(::testing::TempDir()) + "advrf_joint_map_test.yaml";
-  {
-    std::ofstream out(path);
-    out << "joint_map:\n  7: a\n  2: b\n  4: imu\n";
-  }
-
-  const auto motors = MotorsDefinition::load(path, {"b", "a"});
-  EXPECT_EQ(motors.get_ecat_id("a"), 7);
-  EXPECT_THROW(motors.get_ecat_id("imu"), std::invalid_argument);
-  EXPECT_THROW(MotorsDefinition::load(path, {"missing"}), std::invalid_argument);
-  std::remove(path.c_str());
 }
 
 TEST(JointCommands, ConversionAndSharedLimits)
@@ -252,36 +236,6 @@ TEST(JointCommands, CachedIndicesAndLimits)
   const auto subset = config.joint_indices({"a"});
   EXPECT_NO_THROW(config.check_indexed(point, config.joint_indices({"b"})));
   EXPECT_THROW(config.check_indexed(point, subset), std::invalid_argument);
-}
-
-TEST(MotorPower, ExplicitControlModesWithoutGains)
-{
-  for (const auto &name : {"position", "velocity", "impedance", "torque", "current"})
-  {
-    const auto mode = control_mode_from_string(name);
-    const auto request = ReplCmdBuilder::build_motor_start(7, static_cast<uint8_t>(mode)).request;
-    EXPECT_EQ(request.type, advrf_ros2_interfaces::msg::ReplCmdContent::CTRL_CMD);
-    EXPECT_EQ(request.ctrl_cmd.type, advrf_ros2_interfaces::msg::CtrlCmd::CTRL_CMD_START);
-    EXPECT_EQ(request.ctrl_cmd.board_id, 7);
-    EXPECT_EQ(request.ctrl_cmd.value, static_cast<uint8_t>(mode));
-    EXPECT_EQ(request.ctrl_cmd.gains.type, 0);
-    EXPECT_EQ(request.ctrl_cmd.gains.pos_kp, 0);
-    EXPECT_EQ(request.ctrl_cmd.gains.pos_kd, 0);
-    EXPECT_EQ(request.ctrl_cmd.gains.tor_kp, 0);
-    EXPECT_EQ(request.ctrl_cmd.gains.tor_ki, 0);
-    EXPECT_EQ(request.ctrl_cmd.gains.tor_kd, 0);
-  }
-  EXPECT_EQ(static_cast<uint8_t>(control_mode_from_string("position")), 59);
-  EXPECT_EQ(static_cast<uint8_t>(control_mode_from_string("impedance")), 212);
-  EXPECT_THROW(control_mode_from_string("unknown"), std::invalid_argument);
-  EXPECT_THROW(ReplCmdBuilder::build_motor_start(-1, static_cast<uint8_t>(ControlMode::Position)),
-               std::invalid_argument);
-  EXPECT_THROW(ReplCmdBuilder::build_motor_start(1, 0),
-               std::invalid_argument);
-  const auto stop = ReplCmdBuilder::build_motor_stop(7).request;
-  EXPECT_EQ(stop.type, advrf_ros2_interfaces::msg::ReplCmdContent::CTRL_CMD);
-  EXPECT_EQ(stop.ctrl_cmd.type, advrf_ros2_interfaces::msg::CtrlCmd::CTRL_CMD_STOP);
-  EXPECT_EQ(stop.ctrl_cmd.board_id, 7);
 }
 
 TEST(Motors, ParameterIdsValidation)

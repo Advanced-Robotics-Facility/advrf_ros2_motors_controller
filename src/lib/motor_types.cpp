@@ -1,5 +1,4 @@
 #include "advrf_ros2_motors_controller/motor_types.hpp"
-#include <yaml-cpp/yaml.h>
 #include <limits>
 #include <set>
 #include <stdexcept>
@@ -65,36 +64,4 @@ MotorsDefinition MotorsDefinition::from_ids(const std::vector<int64_t> &ids,
   return result;
 }
 
-MotorsDefinition MotorsDefinition::load(const std::string &path,
-                                        const std::vector<std::string> &joints)
-{
-  const auto map = YAML::LoadFile(path)["joint_map"];
-  if (!map.IsMap())
-  {
-    throw std::invalid_argument("Expected joint_map mapping in robot_id_map file");
-  }
-  MotorsDefinition all, selected;
-  for (const auto &entry : map)
-  {
-    const auto id = entry.first.as<int64_t>();
-    if (id < 0 || id > std::numeric_limits<int32_t>::max())
-    {
-      throw std::invalid_argument("EtherCAT ID outside int32 range");
-    }
-
-    all.declare(static_cast<int>(id), entry.second.as<std::string>());
-  }
-
-  if (joints.empty())
-  {
-    throw std::invalid_argument("Explicit controlled joints required");
-  }
-
-  for (const auto &joint : joints)
-  {
-    selected.declare(all.get_ecat_id(joint), joint);
-  }
-
-  return selected;
-}
 } // namespace advrf_ros2_motors_controller

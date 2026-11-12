@@ -18,8 +18,6 @@ public:
   int32_t get_ecat_id(const std::string &joint_name) const;
   static MotorsDefinition from_ids(const std::vector<int64_t> &ids,
                                    const std::vector<std::string> &joints);
-  // Reads robot_id_map joint_map: {ecat_id: joint_name}. Only selected joints are motors.
-  static MotorsDefinition load(const std::string &path, const std::vector<std::string> &joints);
 
 private:
   std::map<std::string, std::array<float, 5>> joint_gains_;

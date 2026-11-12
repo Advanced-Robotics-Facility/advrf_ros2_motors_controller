@@ -29,12 +29,10 @@ class GeneratorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             os.environ['ROS_LOG_DIR'] = temporary
-            mapping = root / 'map.yaml'
-            mapping.write_text('joint_map: {1: a, 2: b}')
             config = root / 'joint.yaml'
             config.write_text(f'''/**:
   ros__parameters:
-    robot_id_map: {mapping}
+    motor_ids: [1, 2]
     joints: [a, b]
     position_lower: [-1.0, -1.0]
     position_upper: [1.0, 1.0]
@@ -64,9 +62,18 @@ class GeneratorTest(unittest.TestCase):
                 output_process = subprocess.Popen([sys.argv[3], '--ros-args', '--params-file', str(config),
                     '-r', '__ns:=/sweep_test'], stdout=log, stderr=log)
                 client = None
-                base = [sys.argv[2], '--namespace', '/sweep_test', '--joint-limits', str(config),
+                base = [sys.argv[2], '--namespace', '/sweep_test', '--ecat-namespace', '/sweep_test', '--parameter-node', '/sweep_test/joint_trajectory_controller_node',
                         '--joint', 'a', '--min', '-0.1', '--max', '0.1', '--duration', '1']
                 try:
+                    unavailable = subprocess.run(
+                        base + ['--parameter-node', '/missing/controller', '--timeout', '0.2'],
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
+                    )
+                    self.assertEqual(unavailable.returncode, 1)
+                    self.assertIn('Parameter service unavailable', unavailable.stderr)
+
                     result = subprocess.run(base + ['--repeat', '2'], capture_output=True, text=True, timeout=12)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertIn('Cycle 2 complete', result.stdout + result.stderr)

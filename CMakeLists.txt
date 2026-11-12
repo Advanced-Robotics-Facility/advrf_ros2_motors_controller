@@ -8,7 +8,6 @@ foreach(dependency rclcpp rclcpp_action control_msgs trajectory_msgs sensor_msgs
   find_package(${dependency} REQUIRED)
 endforeach()
 
-find_package(yaml-cpp REQUIRED)
 
 add_library(motors_controller_math src/math/spline.cpp)
 target_compile_features(motors_controller_math PUBLIC cxx_std_17)
@@ -22,10 +21,9 @@ add_library(motors_controller_common
   src/lib/motor_types.cpp
   src/lib/controller_config.cpp
   src/lib/go_to.cpp
-  src/lib/repl_cmd_manager.cpp
 )
 
-target_link_libraries(motors_controller_common yaml-cpp motors_controller_math)
+target_link_libraries(motors_controller_common motors_controller_math)
 target_compile_features(motors_controller_common PUBLIC cxx_std_17)
 target_compile_options(motors_controller_common PRIVATE -Wall -Wextra -Wpedantic)
 target_include_directories(motors_controller_common PUBLIC
@@ -53,11 +51,10 @@ install(TARGETS joint_trajectory_controller_node converter_tx_motor_node joint_g
 install(TARGETS motors_controller_common motors_controller_math EXPORT export_motors_controller_common
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
 install(DIRECTORY include/ DESTINATION include)
-install(PROGRAMS scripts/robot_config_node scripts/test_joint_trajectory DESTINATION lib/${PROJECT_NAME})
-install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+install(PROGRAMS scripts/test_joint_trajectory DESTINATION lib/${PROJECT_NAME})
 install(FILES README.md plugin.xml DESTINATION share/${PROJECT_NAME})
 ament_export_targets(export_motors_controller_common HAS_LIBRARY_TARGET)
-ament_export_dependencies(yaml-cpp rclcpp rclcpp_action control_msgs trajectory_msgs sensor_msgs builtin_interfaces advrf_ros2_interfaces)
+ament_export_dependencies(rclcpp rclcpp_action control_msgs trajectory_msgs sensor_msgs builtin_interfaces advrf_ros2_interfaces)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
@@ -66,8 +63,8 @@ if(BUILD_TESTING)
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_ecat_namespace.py"
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO
     TIMEOUT 15)
-  ament_add_test(test_launch_config
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_launch_config.py"
+  ament_add_test(test_panel_config
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_panel_config.py"
     APPEND_ENV "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}"
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO)
   ament_add_test(test_trajectory_generator
@@ -75,23 +72,9 @@ if(BUILD_TESTING)
       "$<TARGET_FILE:joint_trajectory_controller_node>" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_joint_trajectory" "$<TARGET_FILE:converter_tx_motor_node>"
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO
     TIMEOUT 30)
-  ament_add_test(test_robot_config_node
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_robot_config_node.py"
-    APPEND_ENV "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}"
-    GENERATE_RESULT_FOR_RETURN_CODE_ZERO
-    TIMEOUT 20)
-  ament_add_test(test_central_config
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_central_config.py"
-    APPEND_ENV "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}"
-    GENERATE_RESULT_FOR_RETURN_CODE_ZERO)
-  ament_add_test(test_robot_config
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_robot_config.py"
-    APPEND_ENV "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}"
-    GENERATE_RESULT_FOR_RETURN_CODE_ZERO)
-  ament_add_test(test_motor_profiles
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_motor_profiles.py"
-    APPEND_ENV "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}"
-    GENERATE_RESULT_FOR_RETURN_CODE_ZERO)
+
+
+
   ament_add_test(test_motor_panel
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_motor_panel.py"
     ENV "ROS_DOMAIN_ID=218" "ROS_LOCALHOST_ONLY=1" "QT_QPA_PLATFORM=offscreen"
@@ -114,11 +97,6 @@ if(BUILD_TESTING)
       "$<TARGET_FILE:joint_goal_manager_node>" "$<TARGET_FILE:joint_trajectory_controller_node>" "$<TARGET_FILE:converter_tx_motor_node>"
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO
     TIMEOUT 45)
-  ament_add_gtest(test_repl_cmd_manager test/test_repl_cmd_manager.cpp)
-  target_link_libraries(test_repl_cmd_manager motors_controller_common)
-  ament_target_dependencies(test_repl_cmd_manager rclcpp advrf_ros2_interfaces)
-  set_tests_properties(test_repl_cmd_manager PROPERTIES
-    ENVIRONMENT "ROS_DOMAIN_ID=191;ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST;ROS_LOG_DIR=/tmp/advrf_repl_test_logs")
   ament_add_gtest(test_interpolator test/test_interpolator.cpp)
   target_link_libraries(test_interpolator motors_controller_common)
   ament_target_dependencies(test_interpolator control_msgs rclcpp_action sensor_msgs advrf_ros2_interfaces)

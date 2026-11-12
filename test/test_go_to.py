@@ -23,12 +23,10 @@ class GoToTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             os.environ['ROS_LOG_DIR'] = str(root)
-            mapping = root / 'robot_id_map.yaml'
-            mapping.write_text('joint_map: {7: a, 2: b}\n')
             config = root / 'config.yaml'
             config.write_text(f'''/**:
   ros__parameters:
-    robot_id_map: {mapping}
+    motor_ids: [7, 2]
     joints: [a, b]
     position_lower: [-2.0, -2.0]
     position_upper: [2.0, 2.0]
