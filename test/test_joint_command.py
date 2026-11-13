@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 import rclpy
 from sensor_msgs.msg import JointState
-from advrf_ros2_interfaces.msg import MotorTxPdoVector
+from advrf_ros2_interfaces.msg import MotorTxPdo
 from advrf_ros2_interfaces.srv import SetJointGains
 from rcl_interfaces.srv import SetParameters
 from rclpy.parameter import Parameter
@@ -37,7 +37,7 @@ class JointCommandTest(unittest.TestCase):
             pub = node.create_publisher(JointState, 'joint_commands', 10)
             other_pub = node.create_publisher(JointState, 'joint_commands', 10)
             received = []
-            sub = node.create_subscription(MotorTxPdoVector, 'tx/motors', received.append, 10)
+            sub = node.create_subscription(MotorTxPdo, 'tx/motors', received.append, 10)
             with open(Path(tmp) / 'node.log', 'w+') as log:
                 process = subprocess.Popen([sys.argv[1], '--ros-args', '--params-file', str(config), '-r', '__ns:=/advrf/test_robot'], stdout=log, stderr=log)
 
@@ -64,27 +64,32 @@ class JointCommandTest(unittest.TestCase):
                     self.assertFalse(received, 'No publication before the first valid command')
                     send(['b', 'a'], [0.2, -0.4], [0.1, -0.2])
                     self.assertTrue(received)
-                    self.assertEqual([p.ecat_id for p in received[-1].data], [2, 7])
-                    self.assertAlmostEqual(received[-1].data[1].pos_ref, -0.4)
-                    self.assertAlmostEqual(received[-1].data[0].vel_ref, 0.1)
-                    self.assertEqual(received[-1].data[0].gain_4, 10.0)
-                    self.assertEqual(received[-1].data[1].gain_0, 1.0)
+                    self.assertGreater(received[-1].header.stamp.sec, 0)
+                    self.assertTrue(all(len(getattr(received[-1], field)) == len(received[-1].ecat_id)
+                                        for field in ("pos_ref", "vel_ref", "tor_ref", "cur_ref",
+                                                      "gain_0", "gain_1", "gain_2", "gain_3", "gain_4",
+                                                      "fault_ack", "ts", "op_idx_aux", "aux")))
+                    self.assertEqual(list(received[-1].ecat_id), [2, 7])
+                    self.assertAlmostEqual(received[-1].pos_ref[1], -0.4)
+                    self.assertAlmostEqual(received[-1].vel_ref[0], 0.1)
+                    self.assertEqual(received[-1].gain_4[0], 10.0)
+                    self.assertEqual(received[-1].gain_0[1], 1.0)
                     send(['a'], [0.3])
-                    self.assertEqual(len(received[-1].data), 1)
-                    self.assertEqual(received[-1].data[0].ecat_id, 7)
-                    self.assertEqual(received[-1].data[0].vel_ref, 0.0)
+                    self.assertEqual(len(received[-1].ecat_id), 1)
+                    self.assertEqual(received[-1].ecat_id[0], 7)
+                    self.assertEqual(received[-1].vel_ref[0], 0.0)
                     send(['a'], [], [0.4])
-                    self.assertAlmostEqual(received[-1].data[0].vel_ref, 0.4)
-                    self.assertEqual(received[-1].data[0].pos_ref, 0.0)
-                    self.assertEqual(received[-1].data[0].ecat_id, 7)
+                    self.assertAlmostEqual(received[-1].vel_ref[0], 0.4)
+                    self.assertEqual(received[-1].pos_ref[0], 0.0)
+                    self.assertEqual(received[-1].ecat_id[0], 7)
                     # A different upstream producer uses the same public input.
                     count = len(received)
                     other_pub.publish(JointState(name=['b', 'a'], position=[0.6, -0.2], velocity=[0.1, 0.0]))
                     spin(0.12)
                     self.assertGreater(len(received), count)
-                    self.assertEqual([motor.ecat_id for motor in received[-1].data], [2, 7])
-                    self.assertAlmostEqual(received[-1].data[0].pos_ref, 0.6)
-                    self.assertEqual(received[-1].data[0].gain_4, 10.0)
+                    self.assertEqual(list(received[-1].ecat_id), [2, 7])
+                    self.assertAlmostEqual(received[-1].pos_ref[0], 0.6)
+                    self.assertEqual(received[-1].gain_4[0], 10.0)
                     self.assertEqual(node.count_publishers('tx/motors'), 1)
                     client = node.create_client(SetJointGains, '/advrf/test_robot/set_joint_gains')
                     self.assertTrue(client.wait_for_service(timeout_sec=5.0))
@@ -99,8 +104,8 @@ class JointCommandTest(unittest.TestCase):
                     self.assertTrue(set_gains('a', [11., 12., 13., 14., 15.]).success)
                     spin(0.1)
                     self.assertGreater(len(received), count, 'Last command must be repeated')
-                    self.assertAlmostEqual(received[-1].data[1].pos_ref, -0.2)
-                    self.assertEqual(received[-1].data[1].gain_0, 11.)
+                    self.assertAlmostEqual(received[-1].pos_ref[1], -0.2)
+                    self.assertEqual(received[-1].gain_0[1], 11.)
                     for joint, values in [
                         ('imu', [0.] * 5), ('unknown', [0.] * 5),
                         ('a', [float('nan')] * 5), ('a', [float('inf')] * 5),
@@ -110,9 +115,9 @@ class JointCommandTest(unittest.TestCase):
                         self.assertFalse(response.success)
                         self.assertTrue(response.message)
                     send(['b', 'a'], [0.2, -0.4])
-                    self.assertEqual(received[-1].data[0].gain_4, 10.0)
+                    self.assertEqual(received[-1].gain_4[0], 10.0)
                     self.assertEqual(
-                        [getattr(received[-1].data[1], f'gain_{i}') for i in range(5)],
+                        [getattr(received[-1], f'gain_{i}')[1] for i in range(5)],
                         [11., 12., 13., 14., 15.])
                     parameters = node.create_client(SetParameters, '/advrf/test_robot/converter_tx_motor_node/set_parameters')
                     self.assertTrue(parameters.wait_for_service(timeout_sec=5.0))
@@ -130,13 +135,13 @@ class JointCommandTest(unittest.TestCase):
                     self.assertTrue(set_gains('a', [21., 22., 23., 24., 25.]).success)
                     send(['a', 'b'], [0.1, 0.2])
                     self.assertEqual(
-                        [getattr(received[-1].data[0], f'gain_{i}') for i in range(5)],
+                        [getattr(received[-1], f'gain_{i}')[0] for i in range(5)],
                         [21., 12., 23., 14., 15.])
-                    self.assertEqual(received[-1].data[1].gain_4, 10.)
+                    self.assertEqual(received[-1].gain_4[1], 10.)
                     self.assertTrue(set_mask([False] * 5).successful)
                     self.assertTrue(set_gains('a', [0.] * 5).success)
                     send(['a'], [0.1])
-                    self.assertEqual(received[-1].data[0].gain_0, 21.)
+                    self.assertEqual(received[-1].gain_0[0], 21.)
                     held = received[-1]
                     for args in [
                         ([], []), (['a'], []), (['a', 'a'], [0.0, 0.0]),
@@ -146,10 +151,13 @@ class JointCommandTest(unittest.TestCase):
                         (['a'], [0.0], [0.0, 0.0]), (['a'], [0.0], [], [1.0]),
                     ]:
                         send(*args)
+                        self.assertNotEqual(received[-1].header.stamp, held.header.stamp)
+                        held.header = received[-1].header
                         self.assertEqual(received[-1], held, f'Invalid batch replaced last command: {args}')
                     count = len(received)
                     spin(0.7)
                     self.assertGreater(len(received), count + 20, 'Must keep publishing beyond bridge timeout')
+                    held.header = received[-1].header
                     self.assertEqual(received[-1], held)
                 finally:
                     process.terminate()

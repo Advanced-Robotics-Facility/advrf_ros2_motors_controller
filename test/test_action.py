@@ -15,7 +15,7 @@ from control_msgs.action import FollowJointTrajectory
 from sensor_msgs.msg import JointState
 from std_srvs.srv import SetBool
 from trajectory_msgs.msg import JointTrajectoryPoint
-from advrf_ros2_interfaces.msg import MotorTxPdoVector
+from advrf_ros2_interfaces.msg import MotorTxPdo
 
 
 class ActionTest(unittest.TestCase):
@@ -54,10 +54,10 @@ class ActionTest(unittest.TestCase):
             def command(msg):
                 received.append(msg)
                 if follow[0]:
-                    for motor in msg.data:
-                        positions[motor.ecat_id] = motor.pos_ref
+                    for motor_ecat_id, motor_pos_ref in zip(msg.ecat_id, msg.pos_ref):
+                        positions[motor_ecat_id] = motor_pos_ref
 
-            sub = node.create_subscription(MotorTxPdoVector, 'tx/motors', command, 10)
+            sub = node.create_subscription(MotorTxPdo, 'tx/motors', command, 10)
 
             def state():
                 if enabled[0]:
@@ -112,18 +112,18 @@ class ActionTest(unittest.TestCase):
                 self.assertEqual(result.status, GoalStatus.STATUS_SUCCEEDED)
                 self.assertEqual(result.result.error_code, 0)
                 self.assertTrue(feedback)
-                self.assertTrue(any(abs(p.pos_ref - 0.2) < 0.005 for m in received for p in m.data if p.ecat_id == 2))
-                self.assertTrue(any(0 < p.pos_ref < 0.19 for m in received for p in m.data if p.ecat_id == 2))
+                self.assertTrue(any(abs(p_pos_ref - 0.2) < 0.005 for m in received for p_ecat_id, p_pos_ref in zip(m.ecat_id, m.pos_ref) if p_ecat_id == 2))
+                self.assertTrue(any(0 < p_pos_ref < 0.19 for m in received for p_ecat_id, p_pos_ref in zip(m.ecat_id, m.pos_ref) if p_ecat_id == 2))
                 count = len(received)
                 handle = wait(client.send_goal_async(partial_goal(0.15)))
                 self.assertTrue(handle.accepted)
                 result = wait(handle.get_result_async())
                 self.assertEqual(result.status, GoalStatus.STATUS_SUCCEEDED)
                 partial_commands = received[count:]
-                self.assertTrue(any(abs(p.pos_ref - 0.15) < 0.005
-                                    for m in partial_commands for p in m.data if p.ecat_id == 7))
-                self.assertTrue(all(abs(p.pos_ref - 0.2) < 0.005
-                                    for m in partial_commands for p in m.data if p.ecat_id == 2))
+                self.assertTrue(any(abs(p_pos_ref - 0.15) < 0.005
+                                    for m in partial_commands for p_ecat_id, p_pos_ref in zip(m.ecat_id, m.pos_ref) if p_ecat_id == 7))
+                self.assertTrue(all(abs(p_pos_ref - 0.2) < 0.005
+                                    for m in partial_commands for p_ecat_id, p_pos_ref in zip(m.ecat_id, m.pos_ref) if p_ecat_id == 2))
                 self.assertTrue(mode.wait_for_service(timeout_sec=3))
                 endpoints = node.get_publishers_info_by_topic('tx/motors')
                 self.assertEqual([endpoint.node_name for endpoint in endpoints],

@@ -80,10 +80,10 @@ TEST(Motors, MappingAndCommands)
   EXPECT_THROW(motors.get_ecat_id("unknown"), std::invalid_argument);
   auto p = sample_trajectory(trajectory(), 1);
   auto out = middleware_msgs::from_trajectory_point({"b", "a"}, p, motors, {1, 2, 3, 4, 5});
-  EXPECT_EQ(out.data[0].ecat_id, 2);
-  EXPECT_EQ(out.data[1].ecat_id, 7);
-  EXPECT_FLOAT_EQ(out.data[0].pos_ref, 2);
-  EXPECT_FLOAT_EQ(out.data[0].gain_4, 5);
+  EXPECT_EQ(out.ecat_id[0], 2);
+  EXPECT_EQ(out.ecat_id[1], 7);
+  EXPECT_FLOAT_EQ(out.pos_ref[0], 2);
+  EXPECT_FLOAT_EQ(out.gain_4[0], 5);
   p.positions[0] = INFINITY;
   EXPECT_THROW(middleware_msgs::from_trajectory_point({"a", "b"}, p, motors),
                std::invalid_argument);
@@ -145,19 +145,19 @@ TEST(Motors, JointStateMiddlewareConversion)
   message.velocity = {0.75, -1.0};
 
   const auto output = middleware_msgs::from_joint_state(message, motors, {1, 2, 3, 4, 5});
-  ASSERT_EQ(output.data.size(), 2u);
-  EXPECT_EQ(output.data[0].ecat_id, 2);
-  EXPECT_FLOAT_EQ(output.data[0].pos_ref, 0.25f);
-  EXPECT_FLOAT_EQ(output.data[1].vel_ref, -1.0f);
-  EXPECT_FLOAT_EQ(output.data[1].gain_4, 5.0f);
+  ASSERT_EQ(output.ecat_id.size(), 2u);
+  EXPECT_EQ(output.ecat_id[0], 2);
+  EXPECT_FLOAT_EQ(output.pos_ref[0], 0.25f);
+  EXPECT_FLOAT_EQ(output.vel_ref[1], -1.0f);
+  EXPECT_FLOAT_EQ(output.gain_4[1], 5.0f);
 
   message.position.clear();
   const auto velocity_only = middleware_msgs::from_joint_state(message, motors);
-  EXPECT_FLOAT_EQ(velocity_only.data[0].pos_ref, 0.0f);
-  EXPECT_FLOAT_EQ(velocity_only.data[0].vel_ref, 0.75f);
+  EXPECT_FLOAT_EQ(velocity_only.pos_ref[0], 0.0f);
+  EXPECT_FLOAT_EQ(velocity_only.vel_ref[0], 0.75f);
   message.position = {0.25, -0.5};
   message.velocity.clear();
-  EXPECT_FLOAT_EQ(middleware_msgs::from_joint_state(message, motors).data[0].vel_ref, 0.0f);
+  EXPECT_FLOAT_EQ(middleware_msgs::from_joint_state(message, motors).vel_ref[0], 0.0f);
 
   message.effort = {1.0, 1.0};
   EXPECT_THROW(middleware_msgs::from_joint_state(message, motors), std::invalid_argument);

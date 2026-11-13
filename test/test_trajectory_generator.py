@@ -13,7 +13,7 @@ from pathlib import Path
 
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
-from advrf_ros2_interfaces.msg import MotorTxPdoVector
+from advrf_ros2_interfaces.msg import MotorTxPdo
 from sensor_msgs.msg import JointState
 from advrf_ros2_motors_controller.test_trajectory import make_trajectory
 
@@ -48,9 +48,9 @@ class GeneratorTest(unittest.TestCase):
             publisher = fake.create_publisher(JointState, 'ecat/rx/joint_states', 10)
             def command(message):
                 received.append(message)
-                for motor in message.data:
-                    positions[motor.ecat_id - 1] = motor.pos_ref
-            fake.create_subscription(MotorTxPdoVector, 'tx/motors', command, 10)
+                for motor_ecat_id, motor_pos_ref in zip(message.ecat_id, message.pos_ref):
+                    positions[motor_ecat_id - 1] = motor_pos_ref
+            fake.create_subscription(MotorTxPdo, 'tx/motors', command, 10)
             fake.create_timer(0.01, lambda: publisher.publish(JointState(name=['b', 'a'], position=list(reversed(positions)))))
             executor = SingleThreadedExecutor()
             executor.add_node(fake)
@@ -80,7 +80,7 @@ class GeneratorTest(unittest.TestCase):
                     self.assertNotIn('Cycle 3 complete', result.stdout + result.stderr)
                     self.assertAlmostEqual(positions[0], -0.1, places=3)
                     self.assertTrue(received)
-                    self.assertTrue(all(abs(m.pos_ref - 0.6) < 1e-6 for msg in received for m in msg.data if m.ecat_id == 2))
+                    self.assertTrue(all(abs(m_pos_ref - 0.6) < 1e-6 for msg in received for m_ecat_id, m_pos_ref in zip(msg.ecat_id, msg.pos_ref) if m_ecat_id == 2))
                     client = subprocess.Popen(base + ['--repeat', '0'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                     time.sleep(1.5)
                     self.assertIsNone(client.poll(), 'Infinite repeat ended unexpectedly')

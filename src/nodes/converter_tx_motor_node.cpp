@@ -76,7 +76,7 @@ public:
           }
         });
 
-    publisher_tx_motors_ = create_publisher<advrf_ros2_interfaces::msg::MotorTxPdoVector>("tx/motors", declare_command_qos(*this));
+    publisher_tx_motors_ = create_publisher<advrf_ros2_interfaces::msg::MotorTxPdo>("tx/motors", declare_command_qos(*this));
     subscription_joint_state_ = create_subscription<sensor_msgs::msg::JointState>("joint_commands", rclcpp::QoS(1).reliable().durability_volatile(),
         [this](sensor_msgs::msg::JointState::ConstSharedPtr message)
         {
@@ -87,8 +87,12 @@ public:
         std::chrono::duration<double>(1.0 / publish_rate), [this]()
         {
           if (last_command_)
-            publisher_tx_motors_->publish(middleware_msgs::from_joint_state(
-                *last_command_, config_.motors, config_.gains));
+          {
+            auto converted = middleware_msgs::from_joint_state(
+                *last_command_, config_.motors, config_.gains);
+            converted.header.stamp = now();
+            publisher_tx_motors_->publish(converted);
+          }
         });
     RCLCPP_INFO(get_logger(), "JointState-to-motor converter ready (%zu motors, %.1f Hz)",
                 config_.joints.size(), publish_rate);
@@ -108,6 +112,7 @@ private:
       }
       config_.check_indexed(point, joint_indices_, false);
       auto converted = middleware_msgs::from_joint_state(message, config_.motors, config_.gains);
+      converted.header.stamp = now();
       last_command_ = message;
       publisher_tx_motors_->publish(converted);
     }
@@ -124,7 +129,7 @@ private:
   rclcpp::Service<advrf_ros2_interfaces::srv::SetJointGains>::SharedPtr gains_service_;
   std::vector<std::string> joint_names_;
   std::vector<size_t> joint_indices_;
-  rclcpp::Publisher<advrf_ros2_interfaces::msg::MotorTxPdoVector>::SharedPtr publisher_tx_motors_;
+  rclcpp::Publisher<advrf_ros2_interfaces::msg::MotorTxPdo>::SharedPtr publisher_tx_motors_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr subscription_joint_state_;
 };
 } // namespace advrf_ros2_motors_controller

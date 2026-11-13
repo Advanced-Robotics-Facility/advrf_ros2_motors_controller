@@ -30,7 +30,7 @@ ros2 launch advrf_ros2_miranda_bringup miranda.launch.py
 
 - Feedback: `rx/joint_states` (`sensor_msgs/msg/JointState`).
 - Intermediate commands: `joint_commands` (`sensor_msgs/msg/JointState`).
-- Motor commands: `tx/motors` (`advrf_ros2_interfaces/msg/MotorTxPdoVector`).
+- Motor commands: `tx/motors` (`advrf_ros2_interfaces/msg/MotorTxPdo`).
 - Gain updates: `advrf_ros2_interfaces/srv/SetJointGains`.
 - The package also provides an rqt motor panel. Topic and action namespaces are configured by the launch files.
 

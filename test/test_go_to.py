@@ -14,7 +14,7 @@ import rclpy
 from rclpy.action import ActionClient
 from action_msgs.msg import GoalStatus
 from advrf_ros2_interfaces.action import GoToJointPositions
-from advrf_ros2_interfaces.msg import MotorTxPdoVector
+from advrf_ros2_interfaces.msg import MotorTxPdo
 from sensor_msgs.msg import JointState
 
 
@@ -60,11 +60,11 @@ class GoToTest(unittest.TestCase):
             def command(message):
                 commands.append(message)
                 if follow[0]:
-                    for motor in message.data:
-                        positions[motor.ecat_id] = motor.pos_ref
+                    for motor_ecat_id, motor_pos_ref in zip(message.ecat_id, message.pos_ref):
+                        positions[motor_ecat_id] = motor_pos_ref
 
             node.create_timer(0.01, state)
-            node.create_subscription(MotorTxPdoVector, 'tx/motors', command, 10)
+            node.create_subscription(MotorTxPdo, 'tx/motors', command, 10)
             client = ActionClient(node, GoToJointPositions, 'go_to_joint_positions')
 
             def spin(duration):
@@ -105,8 +105,8 @@ class GoToTest(unittest.TestCase):
                 self.assertAlmostEqual(positions[7], 0.2, delta=0.005)
                 self.assertAlmostEqual(positions[2], 0.35, delta=0.005)
                 self.assertTrue(feedback)
-                self.assertTrue(any(0 < motor.pos_ref < 0.19 for msg in commands
-                                    for motor in msg.data if motor.ecat_id == 7))
+                self.assertTrue(any(0 < motor_pos_ref < 0.19 for msg in commands
+                                    for motor_ecat_id, motor_pos_ref in zip(msg.ecat_id, msg.pos_ref) if motor_ecat_id == 7))
                 self.assertFalse(wait(client.send_goal_async(goal(9))).accepted)
                 self.assertFalse(wait(client.send_goal_async(goal(0.1, 2))).accepted)
                 self.assertFalse(wait(client.send_goal_async(goal(0.1, names=['unknown']))).accepted)
